@@ -82,7 +82,8 @@ function eff(d) {
     w: m.w ?? h.oweight ?? h.weight ?? null,
     steps: m.steps ?? h.zsteps ?? h.steps ?? null,
     active,
-    kcal: m.kcal ?? (active != null ? bmr(d) + active : h.kcal) ?? null,
+    // حرق تقديري = راحة (الميزان) + نشاط الساعة + التمرين لو الساعة مش حاسباه في الحلقة + هضم الأكل ~10%
+    kcal: m.kcal ?? (active != null ? Math.round(bmr(d) + active + (h.wkcal && h.wkcal > active ? h.wkcal : 0) + 0.1 * DIET.kcal) : h.kcal) ?? null,
     sleep: m.sleepMin ?? h.zsleep ?? h.sleepMin ?? null,
     rhr: h.rhr ?? null,
     fat: h.fat ?? null,
@@ -1110,7 +1111,7 @@ function bodySheet() {
 function weeklyReport() {
   const t = today(), wk = curWeek(), set = S.settings;
   const now = avgWeight(t), prev = avgWeight(addDays(t, -7));
-  const lines = [`# تقرير الأسبوع ${wk} – كوتش الجيم`, `الفترة: ${addDays(t, -6)} → ${t}`, ''];
+  const lines = [`# تقرير ${diffDays(t, set.start) < 0 ? 'قبل بداية البرنامج' : 'الأسبوع ' + wk} – كوتش الجيم`, `الفترة: ${addDays(t, -6)} → ${t}`, ''];
   lines.push('## الوزن والنشاط');
   const daily = []; for (let i = 6; i >= 0; i--) { const d = addDays(t, -i); const e = eff(d); daily.push(`${short(d)}: ${e.w ?? '—'} كجم · ${e.steps ?? '—'} خطوة · نشاط ${e.active ?? '—'} · حرق تقديري ${e.kcal ?? '—'} · نوم ${e.sleep ? (e.sleep / 60).toFixed(1) + 'س' : '—'}${e.creatine ? ' · كرياتين✓' : ''}`); }
   lines.push(`- متوسط الوزن: ${now ? fmt(now.avg, 2) : '—'} (الأسبوع اللي فات ${prev ? fmt(prev.avg, 2) : '—'})`);
@@ -1118,6 +1119,8 @@ function weeklyReport() {
   lines.push(...daily.map(x => '  - ' + x));
   const bd = Object.keys(S.body).sort().pop(); if (bd) { const b = S.body[bd]; lines.push(`- آخر قياس (${bd}): وزن ${b.weight ?? '—'} · دهون ${b.fat ?? '—'}% (${b.fatKg ?? '—'} كجم) · عضل هيكلي ${b.skmKg ?? '—'} كجم (${b.skm ?? '—'}%) · مية ${b.water ?? '—'}% · حشوية ${b.visceral ?? '—'} · BMR ${b.bmr ?? '—'} · وسط ${b.waist ?? '—'} سم`); }
   lines.push('', '## التمرين');
+  { const old = Object.values(S.logs).filter(x => x.src === 'gain' && x.date >= addDays(t, -6) && x.date <= t).sort((a, b) => a.date.localeCompare(b.date));
+    old.forEach(x => lines.push(`- ${x.date} (من The Gain): ${Object.entries(x.ex).map(([k, a]) => `${(a[0] && a[0].name) || k} ${a.map(z => z.w + '×' + z.r).join(' ')}`).join(' | ')}`)); }
   for (const d of DAYS) {
     const s = S.logs[sessKey(wk, d.key)];
     if (!s || !Object.values(s.ex).some(a => a.length)) { lines.push(`- ${d.title}: ❌ متعملش`); continue; }
