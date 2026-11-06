@@ -151,7 +151,9 @@ function adaptive() {
   const ideal = Math.round(tdee - goalDaily);
   let delta = ideal - S.settings.kcal;
   delta = Math.max(-150, Math.min(150, Math.round(delta / 10) * 10));
-  return { tdee, slopeWk: slope * 7, intakeAvg: Math.round(intakeAvg), logged, days: inN, ideal, delta: Math.abs(delta) < 70 ? 0 : delta, conf: logged >= 14 ? 'عالية' : logged >= 7 ? 'متوسطة' : 'ضعيفة' };
+  const sa = sleepAvg(end); const sleepHold = !!(sa && sa.n >= 4 && sa.avg < 60 && delta < 0);
+  if (sleepHold) delta = 0;
+  return { tdee, slopeWk: slope * 7, intakeAvg: Math.round(intakeAvg), logged, days: inN, ideal, sleepHold, sleepAvg: sa, delta: Math.abs(delta) < 70 ? 0 : delta, conf: logged >= 14 ? 'عالية' : logged >= 7 ? 'متوسطة' : 'ضعيفة' };
 }
 function applyAdaptive(delta) {
   S.settings.kcal = Math.round(S.settings.kcal + delta);
@@ -221,10 +223,90 @@ function todayPlan() {
 }
 
 /* ================= الجاهزية ================= */
+/* ================= جودة النوم ================= */
+const hm = t => { if (!t) return null; const [h, m] = String(t).split(':').map(Number); return isNaN(h) ? null : h * 60 + m; };
+const bedMin = t => { const v = hm(t); return v == null ? null : (v < 12 * 60 ? v + 1440 : v); }; // بعد نص الليل = +24 ساعة
+function sleepQ(d) {
+  const e = eff(d), h = S.health[d] || {}, m = S.days[d] || {}, z = Object.assign({}, h.zsq || {}, m.sq || {});
+  const dur = e.sleep; if (!dur && z.score == null && !m.sleepFeel) return null;
+  const parts = []; let pts = 0, max = 0;
+  const add = (k, label, got, of, txt) => { parts.push({ k, label, got: Math.round(got), of, txt }); pts += got; max += of; };
+  if (dur) { let g = Math.min(1, Math.max(0, (dur - 270) / 180)) * 40; if (dur > 570) g -= 5; add('dur', 'المدة', g, 40, `${Math.floor(dur / 60)}:${pad2(dur % 60)} ساعة`); }
+  const tot = dur || ((z.deep || 0) + (z.light || 0) + (z.rem || 0)) || null;
+  if (z.deep != null && tot) { const pc = z.deep / tot; add('deep', 'نوم عميق', Math.min(1, pc / 0.18) * 20, 20, `${z.deep} دقيقة · ${Math.round(pc * 100)}% (المثالي 15–25%)`); }
+  if (z.rem != null && tot) { const pc = z.rem / tot; add('rem', 'REM (الأحلام)', Math.min(1, pc / 0.2) * 20, 20, `${z.rem} دقيقة · ${Math.round(pc * 100)}% (المثالي 20–25%)`); }
+  if (z.awake != null) add('awake', 'صحيان بالليل', z.awake <= 20 ? 10 : z.awake >= 60 ? 0 : (60 - z.awake) / 40 * 10, 10, `${z.awake} دقيقة صاحي`);
+  const bm = bedMin(z.bed);
+  if (bm != null) { const prev = []; for (let i = 1; i <= 7; i++) { const b = bedMin(((S.health[addDays(d, -i)] || {}).zsq || {}).bed); if (b != null) prev.push(b); }
+    if (prev.length >= 3) { prev.sort((a, b) => a - b); const med = prev[Math.floor(prev.length / 2)], df = Math.abs(bm - med); add('reg', 'انتظام ميعاد النوم', df <= 30 ? 10 : df >= 120 ? 0 : (120 - df) / 90 * 10, 10, `نمت ${z.bed} – العادي بتاعك ${pad2(Math.floor(med / 60) % 24)}:${pad2(med % 60)}`); } }
+  if (m.sleepFeel) add('feel', 'إحساسك الصبح', (m.sleepFeel - 1) / 4 * 10, 10, ['وحش جداً', 'وحش', 'عادي', 'كويس', 'ممتاز'][m.sleepFeel - 1]);
+  let calc = max ? Math.round(pts / max * 100) : null;
+  const score = z.score != null ? (calc != null && max >= 60 ? Math.round(z.score * 0.6 + calc * 0.4) : z.score) : calc;
+  if (score == null) return null;
+  return { score, zepp: z.score ?? null, calc, parts, dur, z, level: score >= 75 ? 'good' : score >= 60 ? 'ok' : 'bad', stages: z.deep != null || z.rem != null };
+}
+const SQ_TXT = { good: ['🟢', 'نوم كويس'], ok: ['🟡', 'نوم متوسط'], bad: ['🔴', 'نوم وحش'] };
+function sleepAvg(end, n = 7) { const xs = []; for (let i = 0; i < n; i++) { const q = sleepQ(addDays(end, -i)); if (q) xs.push(q.score); } return xs.length ? { avg: Math.round(xs.reduce((a, b) => a + b) / xs.length), n: xs.length } : null; }
+/* تأثير النوم عليك انت: مقارنة أيام النوم الكويس بالوحش من بياناتك */
+function sleepEffects() {
+  const good = { st: [], ex: [], pf: [] }, bad = { st: [], ex: [], pf: [] };
+  for (let i = 1; i <= 42; i++) {
+    const d = addDays(today(), -i), q = sleepQ(d); if (!q) continue;
+    const g = q.score >= 70 ? good : q.score < 60 ? bad : null; if (!g) continue;
+    const e = eff(d); if (e.steps != null) g.st.push(e.steps);
+    g.ex.push(extraOf(d));
+    const ses = Object.values(S.logs).find(s => s.date === d && !s.legacy && s.rpe); if (ses) g.pf.push(ses.rpe);
+  }
+  const av = a => a.length ? a.reduce((x, y) => x + y, 0) / a.length : null;
+  const out = [];
+  if (good.st.length >= 3 && bad.st.length >= 3) out.push(`الخطوات: <b>${fmt(av(good.st))}</b> بعد نوم كويس vs <b>${fmt(av(bad.st))}</b> بعد نوم وحش`);
+  if (good.ex.length >= 3 && bad.ex.length >= 3) out.push(`أكل زيادة: <b>${fmt(av(good.ex))}</b> سعر بعد نوم كويس vs <b>${fmt(av(bad.ex))}</b> بعد نوم وحش`);
+  if (good.pf.length >= 2 && bad.pf.length >= 2) out.push(`صعوبة التمرين: <b>${fmt(av(good.pf), 1)}</b>/10 بعد نوم كويس vs <b>${fmt(av(bad.pf), 1)}</b>/10 بعد نوم وحش`);
+  return out;
+}
+function sleepTips(q) {
+  const t = [];
+  if (!q) return t;
+  if (q.dur && q.dur < 390) t.push('المدة قليلة – نام بدري نص ساعة النهارده. أسهل حاجة: الموبايل بره السرير.');
+  if (q.parts.find(p => p.k === 'deep' && p.got < 14)) t.push('النوم العميق قليل: متتمرنش تقيل قبل النوم بأقل من ساعتين، وخلي العشا قبل النوم بساعة ونص على الأقل، والأوضة ضلمة وباردة (18–20°).');
+  if (q.parts.find(p => p.k === 'rem' && p.got < 14)) t.push('الـ REM قليل: ده بيجي آخر الليل – الصحيان بدري أو المنبّه بيقصّه. ثبّت ميعاد الصحيان حتى الإجازة.');
+  if (q.parts.find(p => p.k === 'awake' && p.got < 6)) t.push('صحيت كتير بالليل: قلّل المية آخر ساعة قبل النوم، ومتشربش القهوة بعد 2 الضهر.');
+  if (q.parts.find(p => p.k === 'reg' && p.got < 6)) t.push('ميعاد نومك متلخبط: الجسم بيرتاح أكتر لما الميعاد ثابت ± نص ساعة.');
+  if (q.level === 'bad') t.push('النهارده: الجوع هيبقى أعلى من العادي – خليك على البروتين كامل، وزوّد خضار مش سعرات. والتمرين بيتظبط لوحده على جاهزيتك.');
+  return t;
+}
+function sleepSheet(d = today()) {
+  const q = sleepQ(d), m = S.days[d] || {}, av = sleepAvg(d), fx = sleepEffects();
+  openSheet(sheetHead('😴 نومك', `ليلة ${nice(addDays(d, -1))}`) + `
+    ${q ? `<div class="tiles mt"><div class="tile"><small>جودة النوم</small><b class="num">${q.score}<span style="font-size:15px">/100</span></b><div class="sub">${SQ_TXT[q.level].join(' ')}${q.zepp != null ? ` · Zepp ${q.zepp}` : ''}</div></div><div class="tile"><small>متوسط آخر ${av ? av.n : 0} ليالي</small><b class="num">${av ? av.avg : '—'}</b><div class="sub">الهدف 75+</div></div></div>
+      ${q.parts.map(p => `<div class="hrow"><span class="v" style="font-weight:600">${p.label}<small>${esc(p.txt)}</small></span><span class="d num"><b class="${p.got / p.of >= .75 ? 'up' : p.got / p.of < .5 ? 'down' : ''}">${p.got}/${p.of}</b></span></div>`).join('')}
+      ${!q.stages ? `<p class="muted small" style="line-height:1.7">مراحل النوم (عميق / REM / صحيان) لسه مش بتتقرا. التطبيق بيفتح صفحة النوم في Zepp Active لوحده الصبح – لو فضلت فاضية ابعتلي سكرين شوت من صفحة النوم.</p>` : ''}` : '<p class="muted mt">لسه مفيش بيانات نوم لليلة دي.</p>'}
+    <div class="field"><span>صحيت حاسس إزاي؟</span><div class="grid3" style="grid-template-columns:repeat(5,1fr);gap:6px">${['وحش جداً', 'وحش', 'عادي', 'كويس', 'ممتاز'].map((o, i) => `<button class="chip" data-sf="${i + 1}" style="justify-content:center;white-space:normal;text-align:center;padding:8px 2px;${m.sleepFeel === i + 1 ? 'background:var(--red);color:#fff' : ''}">${o}</button>`).join('')}</div></div>
+    ${sleepTips(q).length ? `<div class="section-t">أعمل إيه؟</div>${sleepTips(q).map(x => `<div class="note"><span class="i">i</span><span>${x}</span></div>`).join('')}` : ''}
+    <div class="section-t">النوم بيأثر على البرنامج إزاي</div>
+    <div class="card pad"><p class="small" style="line-height:1.9;margin:0">
+      • <b>التمرين:</b> جودة أقل من 65 = مجموعة أقل من كل تمرين، وأقل من 50 = نص المجموعات وRIR 3.<br>
+      • <b>السعرات:</b> لو متوسط الأسبوع أقل من 60، مش هنقلل سعرات حتى لو الوزن واقف – في دراسة على ناس في دايت، اللي نام 5.5 ساعة خسر دهون أقل بـ55% وعضل أكتر من اللي نام 8.5 بنفس الأكل.<br>
+      • <b>الجوع:</b> ليلة وحشة بتعلّي هرمون الجوع – اليوم اللي بعدها الكابتن بيفكّرك تمسك البروتين.</p>
+      ${fx.length ? `<div class="section-t" style="margin-top:14px">من بياناتك انت</div><p class="small" style="line-height:1.9;margin:0">${fx.join('<br>')}</p>` : '<p class="muted small" style="margin:10px 0 0">بعد كام أسبوع هقولك النوم بيأثر عليك انت بالأرقام (خطوات، أكل زيادة، صعوبة التمرين).</p>'}</div>
+    <div class="section-t">آخر 7 ليالي</div>
+    ${[...Array(7)].map((_, i) => { const dd = addDays(d, -i), qq = sleepQ(dd); return `<div class="hrow"><span class="d num">${short(dd)}</span><span class="v">${qq ? `<b>${qq.score}</b> ${SQ_TXT[qq.level][0]} · ${qq.dur ? `${Math.floor(qq.dur / 60)}:${pad2(qq.dur % 60)}` : '—'}${qq.z.deep != null ? ` · عميق ${qq.z.deep}د` : ''}${qq.z.rem != null ? ` · REM ${qq.z.rem}د` : ''}` : '—'}</span></div>`; }).join('')}
+    <label class="field" style="display:flex;align-items:center;gap:10px"><input type="checkbox" id="bedOn" ${S.settings.bedRemind ? 'checked' : ''} style="width:22px;height:22px"><span style="margin:0">فكّرني أقفل الشاشات قبل النوم بنص ساعة</span></label>
+    <label class="field"><span>ميعاد النوم</span><input id="bedT" class="inp num" type="time" value="${S.settings.bedTime || '00:00'}"></label>
+    <button class="btn red block mt" id="sqSave">حفظ</button>`, p => {
+    let sf = m.sleepFeel || null;
+    p.querySelectorAll('[data-sf]').forEach(b => b.onclick = () => { sf = +b.dataset.sf; p.querySelectorAll('[data-sf]').forEach(x => { const on = x === b; x.style.background = on ? 'var(--red)' : ''; x.style.color = on ? '#fff' : ''; }); });
+    $('#sqSave', p).onclick = () => { const x = (S.days[d] = S.days[d] || {}); if (sf) x.sleepFeel = sf; S.settings.bedRemind = $('#bedOn', p).checked; S.settings.bedTime = $('#bedT', p).value || '00:00'; save(); scheduleReminders(); closeSheet(); render(); toast('اتحفظ ✓'); };
+  });
+}
+
 function readiness(d = today()) {
   const e = eff(d); let score = 0; const why = [];
-  const sl = e.sleep;
-  if (sl != null) { if (sl < 330) { score -= 2; why.push(`نوم ${r1(sl / 60)} ساعة`); } else if (sl < 390) { score -= 1; why.push(`نوم ${r1(sl / 60)} ساعة`); } }
+  const sl = e.sleep, q = sleepQ(d);
+  let sp = 0;
+  if (sl != null) { if (sl < 330) sp = -2; else if (sl < 390) sp = -1; }
+  if (q) { const qp = q.score < 50 ? -2 : q.score < 65 ? -1 : 0; if (qp < sp) sp = qp; }
+  if (sp) { score += sp; why.push(q ? `جودة النوم ${q.score}${sl ? ` (${r1(sl / 60)} ساعة)` : ''}` : `نوم ${r1(sl / 60)} ساعة`); }
   let pain = false;
   for (const s of Object.values(S.logs)) {
     if (!s.date || s.legacy) continue; const g = diffDays(d, s.date); if (g < 0 || g > 5) continue;
@@ -403,7 +485,10 @@ async function zeppPull() {
       if (v.active != null) h.zactive = v.active;
       if (v.sleepMin != null) h.zsleep = v.sleepMin;
       if (v.hr != null) h.zhr = v.hr;
+      const sq = {}; for (const k of ['score', 'deep', 'light', 'rem', 'awake', 'bed', 'wake', 'resp', 'rhr']) if (v['s_' + k] != null) sq[k] = v['s_' + k];
+      if (Object.keys(sq).length) h.zsq = sq;
     }
+    if (r.rawSleep) S.settings.zRawSleep = r.rawSleep.slice(0, 1500);
     for (const [d, w] of Object.entries(data.workouts || {})) { const h = (S.health[d] = S.health[d] || {}); h.wkcal = w.kcal; h.wmin = w.min; }
     save(); return true;
   } catch (e) { return false; }
@@ -477,6 +562,7 @@ async function scheduleReminders() {
       if (dt === 'lecture') add(4, at(d, 16, 0), 'النهارده محاضرة 🎓', 'العشا: العلبة من البيت، أو الطبق الذكي (نص رز، من غير طرب)، أو السوري بملعقة توم واحدة.');
       if (tr) add(5, at(d, 18, 45), `تمرين النهارده: ${tr.title} 💪`, tr.sub);
       if (dt === 'mom') add(6, at(d, 12, 0), 'جمعة ماما 😄', 'البروتين الأول، طبق واحد مليان، حتة حلو واحدة. ومتصومش بكرة.');
+      if (S.settings.bedRemind) { const bt = hm(S.settings.bedTime || '00:00'); const bd = bt < 12 * 60 ? addDays(d, 1) : d; const w = at(bd, Math.floor(((bt - 30 + 1440) % 1440) / 60), (bt - 30 + 1440) % 60); if (bt < 30) w.setDate(w.getDate() - 1); add(19, w, '😴 نص ساعة على النوم', 'قفّل الشاشات ونوّر خفيف – النوم الكويس = حرق دهون أحسن وجوع أقل بكرة.'); }
       if (dow === 5) add(15, at(d, 19, 30), 'تشيك إن الأسبوع ✍️', '30 ثانية: طاقة، جوع، نوم، ضغط، مزاج + الوسط.');
       if (ghOn()) add(16, at(d, 7, 50), '🧢 رسالة الكابتن', 'مراجعة امبارح جاهزة – افتح التطبيق.');
       if (tr && S.settings.gym && !sessDone(weekOf(d), tr.key) && diffDays(d, S.settings.start) >= 0) add(17, at(d, 20, 30), 'لسه موصلتش الجيم؟', '45 دقيقة من التمرين أحسن من صفر – ابدأ بالتمارين الأساسية.');
@@ -766,7 +852,7 @@ function dailySummary(d) {
   const ses = Object.entries(S.logs).filter(([, s]) => s.date === d && Object.values(s.ex).some(a => a.length));
   return { date: d, type: dayType(d), weight: e.w, steps: e.steps, active: e.active, burnEst: e.kcal, sleepMin: e.sleep, creatine: e.creatine, water: e.water, feel: x.feel,
     meals: x.meals || {}, recipes: x.recipes || null, choice: x.choice, extras: x.extras || [], intake: intake(d), note: x.note, body: b || null,
-    readiness: readiness(d).level, photos: (S.mealPhotos[d] || []).map(m => ({ meal: m.meal, file: `photos/meals/${m.key.replace(/\|/g, '_')}.jpg` })),
+    readiness: readiness(d).level, sleepQ: (q => q ? { score: q.score, zepp: q.zepp, level: q.level, deep: q.z.deep, rem: q.z.rem, light: q.z.light, awake: q.z.awake, bed: q.z.bed, wake: q.z.wake, feel: x.sleepFeel } : null)(sleepQ(d)), photos: (S.mealPhotos[d] || []).map(m => ({ meal: m.meal, file: `photos/meals/${m.key.replace(/\|/g, '_')}.jpg` })),
     sessions: ses.map(([k, s]) => ({ key: k, rpe: s.rpe, pain: s.painAreas, note: s.note, ex: Object.fromEntries(Object.entries(s.ex).map(([lk, a]) => [lk, a.map(z => [z.w, z.r, z.rir, z.p])])) })) };
 }
 async function ghSync(loud) {
@@ -1160,13 +1246,14 @@ function renderHome(el) {
     <div style="flex:1;min-width:0"><div class="chips" style="margin-top:0">${Object.entries(ad.parts).filter(([, v]) => v != null).map(([k, v]) => `<span class="chip ${v >= .8 ? 'ok' : v < .5 ? 'red' : ''}">${PART[k]}<b class="num">${Math.round(v * 100)}%</b></span>`).join('')}</div>
     <div class="small" style="margin-top:8px">${streak ? `🔥 ${streak} أسبوع ورا بعض فوق 80%` : 'الهدف 80% – أول أسبوع يعدّيها يبدأ السلسلة 🔥'}</div></div></div>` : ''}
   ${coachMsgCard()}
+  ${(() => { const q = sleepQ(t); if (!q || q.level !== 'bad') return ''; const tip = sleepTips(q); return `<button class="verdict warn" id="sqBan" style="display:block;width:100%;text-align:start;margin-top:12px"><h3>😴 نومك امبارح ${q.score}/100</h3><p>${tip[tip.length - 1] || ''}</p></button>`; })()}
   ${new Date().getDay() === 5 && !checkinThisWeek() && tp ? `<button class="verdict warn" style="display:block;width:100%;text-align:start;margin-top:12px" id="ckBan"><h3>تشيك إن الأسبوع ✍️ 30 ثانية</h3><p>طاقة، جوع، نوم، ضغط، مزاج + مقاس الوسط.</p></button>` : ''}
   ${photoDue() && [5, 6].includes(new Date().getDay()) ? `<button class="verdict info" style="display:block;width:100%;text-align:start;margin-top:12px" id="phBan"><h3>ميعاد صور التقدّم 📸</h3><p>قدام، جنب، ضهر – دقيقة واحدة.</p></button>` : ''}
   ${needMorning ? `<button class="verdict warn" style="display:block;width:100%;text-align:start;margin-top:12px" id="morning"><h3>تسجيل الصبح ⏱ 20 ثانية</h3><p>${zeppState.enabled ? 'اتوزن وافتح التفاصيل في OKOK – بيتسجّل لوحده. أو اكتبه هنا.' : 'الوزن + خطوات وسعرات ونوم امبارح من الساعة.'}</p></button>` : ''}
   <div class="tiles mt">
     <div class="tile"><small>الخطوات</small><b class="num">${fmt(e.steps)}</b><div class="sub">${ey.steps ? `امبارح ${fmt(ey.steps)}` : `الهدف ${fmt(set.steps)}`}</div><div class="bar ${stepPct >= 100 ? 'ok' : ''}"><i style="width:${stepPct}%"></i></div></div>
     <div class="tile"><small>الحرق امبارح (تقديري)</small><b class="num">${fmt(ey.kcal)}</b><div class="sub">${ey.kcal ? `نشاط ${fmt(ey.active)} + راحة ${fmt(bmr(yd))} · عجز ~${fmt(ey.kcal - set.kcal)}` : 'من ساعة Zepp Active'}</div></div>
-    <div class="tile"><small>نوم امبارح بالليل</small><b class="num">${e.sleep ? `${Math.floor(e.sleep / 60)}:${pad2(e.sleep % 60)}` : '—'}</b><div class="sub">الهدف 7–8 ساعات</div></div>
+    ${(() => { const q = sleepQ(t); return `<div class="tile" role="button" id="tS"><small>نوم امبارح</small><b class="num">${e.sleep ? `${Math.floor(e.sleep / 60)}:${pad2(e.sleep % 60)}` : '—'}${q ? ` <span style="font-size:15px">· ${q.score}</span>` : ''}</b><div class="sub">${q ? `${SQ_TXT[q.level].join(' ')} – اضغط للتفاصيل` : 'الهدف 7–8 ساعات · اضغط'}</div></div>`; })()}
     <div class="tile" role="button" id="tW"><small>الوزن</small><b class="num">${lastW ? fmt(lastW.w, 1) : '—'}</b><div class="sub">${lastW ? (lastW.d === t ? 'النهارده' : short(lastW.d)) : 'اضغط وسجّل'}</div></div>
   </div>
   <div class="section-t">تمرين النهارده</div>
@@ -1191,6 +1278,8 @@ function renderHome(el) {
   const mo = $('#morning'); if (mo) mo.onclick = () => dayEntrySheet(t);
   const pb = $('#phBan'); if (pb) pb.onclick = () => photoSessionSheet();
   const cm = $('#coachMsg'); if (cm) cm.onclick = coachMsgsSheet;
+  $('#tS').onclick = () => sleepSheet(t);
+  const sqb = $('#sqBan'); if (sqb) sqb.onclick = () => sleepSheet(t);
   const ck = $('#ckBan'); if (ck) ck.onclick = checkinSheet;
   $('#qSay').onclick = sayCoachSheet;
   $('#cCr').onclick = () => { day(t).creatine = !day(t).creatine; save(); render(); };
@@ -1548,7 +1637,7 @@ function weekRows() {
     const end = addDays(start, wk * 7 - 1);
     const aw = avgWeight(end); const st = avgOf('steps', end); const sl = avgOf('sleep', end);
     const sessions = DAYS.filter(d => { const s = S.logs[sessKey(wk, d.key)]; return s && Object.values(s.ex).some(a => a.length); }).length;
-    rows.push({ wk, aw: aw && aw.avg, st, sl, sessions });
+    const sqa = sleepAvg(end); rows.push({ wk, aw: aw && aw.avg, st, sl, sq: sqa && sqa.avg, sessions });
   }
   return rows;
 }
@@ -1575,12 +1664,13 @@ function renderProgress(el) {
     <div class="tiles"><div class="tile"><small>الحرق الحقيقي</small><b class="num">${fmt(a.tdee)}</b><div class="sub">ثقة ${a.conf} · ${a.logged}/${a.days} يوم متعلّم</div></div>
     <div class="tile"><small>اتجاه الوزن</small><b class="num">${a.slopeWk <= 0 ? '−' : '+'}${fmt(Math.abs(a.slopeWk), 2)}</b><div class="sub">كجم في الأسبوع</div></div></div>
     <p class="small" style="line-height:1.7;margin:12px 0 0">متوسط أكلك ${fmt(a.intakeAvg)} سعر. عشان تنزل 0.7% في الأسبوع المثالي ~${fmt(a.ideal)} سعر في اليوم العادي (دلوقتي ${fmt(S.settings.kcal)}).</p>
+    ${a.sleepHold ? `<div class="verdict warn mt"><h3>مش هنقلل سعرات دلوقتي 😴</h3><p>متوسط جودة نومك ${a.sleepAvg.avg}/100. التقليل والنوم وحش بيكسّر عضل بدل الدهون – نصلّح النوم الأول وبعدين نقلل.</p></div>` : ''}
     ${a.delta ? `<button class="btn red block mt" id="adaptGo">${a.delta > 0 ? `زوّد ${a.delta} سعر (${Math.round(a.delta / 1.3)} جم رز)` : `قلّل ${-a.delta} سعر (${Math.round(-a.delta / 1.3)} جم رز)`}</button><p class="muted small" style="margin:6px 0 0">التعديل محدود بـ 150 سعر في المرة عشان ميبقاش مفاجئ.</p>` : '<p class="up small" style="margin:8px 0 0">السعرات مظبوطة – مفيش تعديل ✓</p>'}
     ${S.settings.riceAdj ? `<button class="btn ghost block mt sm" id="adaptReset">رجّع الرز للأصل (${riceAdj() > 0 ? '+' : ''}${riceAdj()} جم)</button>` : ''}</div>`; })()}
   <div class="section-t">الوزن – آخر 8 أسابيع</div><div class="card pad">${weightChart()}<button class="link small" id="wEdit" style="margin-top:8px">تعديل الأوزان</button></div>
   <div class="section-t">أسبوع بأسبوع</div>
   <div class="card pad scroll-x">${rows.length ? '' : '<p class="muted small" style="margin:0 0 8px">الجدول هيبدأ مع أول أسبوع في البرنامج.</p>'}<table class="t"><thead><tr><th>الأسبوع</th><th>متوسط الوزن</th><th>الخطوات</th><th>النوم</th><th>تمارين</th></tr></thead><tbody>
-  ${rows.map((r, i) => { const prev = rows[i + 1]; const ch = prev && prev.aw && r.aw ? r.aw - prev.aw : null; return `<tr><td>${r.wk < 1 ? '—' : r.wk}</td><td>${r.aw ? fmt(r.aw, 1) : '—'} ${ch != null ? `<span class="${ch <= 0 ? 'up' : 'down'} small">${ch <= 0 ? '▼' : '▲'}${fmt(Math.abs(ch), 1)}</span>` : ''}</td><td>${r.st ? fmt(r.st) : '—'}</td><td>${r.sl ? (r.sl / 60).toFixed(1) + ' س' : '—'}</td><td>${r.sessions}/4</td></tr>`; }).join('')}
+  ${rows.map((r, i) => { const prev = rows[i + 1]; const ch = prev && prev.aw && r.aw ? r.aw - prev.aw : null; return `<tr><td>${r.wk < 1 ? '—' : r.wk}</td><td>${r.aw ? fmt(r.aw, 1) : '—'} ${ch != null ? `<span class="${ch <= 0 ? 'up' : 'down'} small">${ch <= 0 ? '▼' : '▲'}${fmt(Math.abs(ch), 1)}</span>` : ''}</td><td>${r.st ? fmt(r.st) : '—'}</td><td>${r.sl ? (r.sl / 60).toFixed(1) + ' س' : '—'}${r.sq ? `<br><small class="muted">جودة ${r.sq}</small>` : ''}</td><td>${r.sessions}/4</td></tr>`; }).join('')}
   </tbody></table></div>
   <div class="section-t">القوة (أحسن مجموعة محسوبة)</div>
   <div class="card pad scroll-x">${str.length ? `<table class="t"><thead><tr><th>التمرين</th><th>أحسن مجموعة</th><th>التغيير</th></tr></thead><tbody>${str.map(s => { const ch = s.first ? (s.last - s.first) / s.first * 100 : 0; return `<tr><td>${esc(s.name)}</td><td><span class="num">${fmt(s.best.w, 2)}×${s.best.r}</span></td><td>${s.n > 1 ? `<span class="${ch >= 0 ? 'up' : 'down'}">${ch >= 0 ? '+' : ''}${fmt(ch, 0)}%</span>` : '<span class="muted small">مرة واحدة</span>'}</td></tr>`; }).join('')}</tbody></table>` : '<div class="empty">ابدأ تمرين وسجّل المجموعات.</div>'}</div>
@@ -1632,7 +1722,7 @@ function weeklyReport() {
   const now = avgWeight(t), prev = avgWeight(addDays(t, -7));
   const lines = [`# تقرير ${diffDays(t, set.start) < 0 ? 'قبل بداية البرنامج' : 'الأسبوع ' + wk} – Lifestyle`, `الفترة: ${addDays(t, -6)} → ${t}`, ''];
   lines.push('## الوزن والنشاط');
-  const daily = []; for (let i = 6; i >= 0; i--) { const d = addDays(t, -i); const e = eff(d); daily.push(`${short(d)}: ${e.w ?? '—'} كجم · ${e.steps ?? '—'} خطوة · نشاط ${e.active ?? '—'} · حرق تقديري ${e.kcal ?? '—'} · نوم ${e.sleep ? (e.sleep / 60).toFixed(1) + 'س' : '—'}${e.creatine ? ' · كرياتين✓' : ''}`); }
+  const daily = []; for (let i = 6; i >= 0; i--) { const d = addDays(t, -i); const e = eff(d); daily.push(`${short(d)}: ${e.w ?? '—'} كجم · ${e.steps ?? '—'} خطوة · نشاط ${e.active ?? '—'} · حرق تقديري ${e.kcal ?? '—'} · نوم ${e.sleep ? (e.sleep / 60).toFixed(1) + 'س' : '—'}${(q => q ? ` (جودة ${q.score}${q.z.deep != null ? `، عميق ${q.z.deep}د` : ''}${q.z.rem != null ? `، REM ${q.z.rem}د` : ''})` : '')(sleepQ(d))}${e.creatine ? ' · كرياتين✓' : ''}`); }
   lines.push(`- متوسط الوزن: ${now ? fmt(now.avg, 2) : '—'} (الأسبوع اللي فات ${prev ? fmt(prev.avg, 2) : '—'})`);
   lines.push(`- متوسط الخطوات: ${fmt(avgOf('steps', t))} (الهدف ${set.steps}) · متوسط الحرق: ${fmt(avgOf('kcal', t))} · متوسط النوم: ${avgOf('sleep', t) ? (avgOf('sleep', t) / 60).toFixed(1) + ' ساعة' : '—'}`);
   lines.push(...daily.map(x => '  - ' + x));

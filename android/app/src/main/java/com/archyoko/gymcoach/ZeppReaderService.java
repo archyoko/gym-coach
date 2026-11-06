@@ -38,6 +38,40 @@ public class ZeppReaderService extends AccessibilityService {
     private final Runnable captureTask = this::capture;
     private final Runnable okokTask = this::captureOkok;
     private int scrolls = 0;
+    private int sleepStep = 0;          // 0 لسه، 1 فتحنا صفحة النوم
+    private long sleepTapAt = 0;
+
+    /* ---------- جودة النوم من صفحة النوم في Zepp Active ---------- */
+    private static final String DUR = "(?:(\\d{1,2})\\s*(?:hr|h|ساعة|ساعات|س)\\s*)?(\\d{1,2})\\s*(?:min|m|دقيقة|دقائق|د)";
+    private static Integer durAfter(String all, String labels) {
+        Matcher m = Pattern.compile("(?:" + labels + ")[^0-9]{0,40}?" + DUR, Pattern.CASE_INSENSITIVE).matcher(all);
+        if (m.find()) return (m.group(1) != null ? Integer.parseInt(m.group(1)) * 60 : 0) + Integer.parseInt(m.group(2));
+        m = Pattern.compile(DUR + "[^0-9]{0,25}?(?:" + labels + ")", Pattern.CASE_INSENSITIVE).matcher(all);
+        if (m.find()) return (m.group(1) != null ? Integer.parseInt(m.group(1)) * 60 : 0) + Integer.parseInt(m.group(2));
+        return null;
+    }
+    static JSONObject parseSleepDetail(String all) {
+        JSONObject o = new JSONObject();
+        try {
+            Integer deep = durAfter(all, "Deep sleep|Deep|نوم عميق|العميق|عميق");
+            Integer light = durAfter(all, "Light sleep|Light|نوم خفيف|الخفيف|خفيف");
+            Integer rem = durAfter(all, "REM|حركة العين السريعة|ريم");
+            Integer awake = durAfter(all, "Awake|Wake|مستيقظ|يقظة|صاحي|استيقاظ");
+            if (deep != null) o.put("deep", deep);
+            if (light != null) o.put("light", light);
+            if (rem != null) o.put("rem", rem);
+            if (awake != null) o.put("awake", awake);
+            Matcher sc = Pattern.compile("(?:Sleep score|Score|نقاط النوم|درجة النوم|تقييم النوم|جودة النوم)[^0-9]{0,30}?(\\d{2,3})(?!\\s*(?:hr|h|min|m|ساعة|دقيقة|:|/\\d))", Pattern.CASE_INSENSITIVE).matcher(all);
+            if (sc.find()) { int v = Integer.parseInt(sc.group(1)); if (v > 0 && v <= 100) o.put("score", v); }
+            Matcher bt = Pattern.compile("(\\d{1,2}):(\\d{2})\\s*(?:ص|م|AM|PM|am|pm)?\\s*[-–~]\\s*(\\d{1,2}):(\\d{2})").matcher(all);
+            if (bt.find()) { o.put("bed", bt.group(1) + ":" + bt.group(2)); o.put("wake", bt.group(3) + ":" + bt.group(4)); }
+            Matcher rr = Pattern.compile("(?:Breathing|Respiratory|التنفس)[^0-9]{0,30}?(\\d{1,2}(?:\\.\\d)?)", Pattern.CASE_INSENSITIVE).matcher(all);
+            if (rr.find()) o.put("resp", Double.parseDouble(rr.group(1)));
+            Matcher rh = Pattern.compile("(?:Resting heart rate|Resting HR|نبض الراحة|معدل ضربات القلب أثناء الراحة|أثناء النوم)[^0-9]{0,30}?(\\d{2,3})", Pattern.CASE_INSENSITIVE).matcher(all);
+            if (rh.find()) o.put("rhr", Integer.parseInt(rh.group(1)));
+        } catch (Exception ignored) { }
+        return o;
+    }
 
     static class Item {
         String text; Rect r; AccessibilityNodeInfo node;
@@ -189,6 +223,9 @@ public class ZeppReaderService extends AccessibilityService {
             if (day == null) day = new JSONObject();
             if (steps != null && steps >= day.optInt("steps", -1)) day.put("steps", steps);
             if (active != null && active >= day.optInt("active", -1)) day.put("active", active);
+            JSONObject det0 = parseSleepDetail(all);
+            boolean detailPage = det0.has("deep") || det0.has("light");
+            if (detailPage) sleepMin = (det0.has("deep") && det0.has("light")) ? det0.optInt("deep") + det0.optInt("light") + det0.optInt("rem", 0) : null;
             if (sleepMin != null && sleepMin > 0) {
                 String sd = sleepDate != null ? sleepDate : d;   // النوم بيتسجل على يوم الصحيان
                 JSONObject sday = sd.equals(d) ? day : data.optJSONObject(sd);
@@ -196,6 +233,17 @@ public class ZeppReaderService extends AccessibilityService {
                 sday.put("sleepMin", sleepMin);
             }
             if (hr != null) day.put("hr", hr);
+            JSONObject det = det0;
+            if (det.has("deep") || det.has("score") || det.has("rem")) {
+                String sd = sleepDate != null ? sleepDate : d;
+                JSONObject sday = sd.equals(d) ? day : data.optJSONObject(sd);
+                if (sday == null) { sday = new JSONObject(); data.put(sd, sday); }
+                java.util.Iterator<String> ks = det.keys();
+                while (ks.hasNext()) { String k = ks.next(); sday.put("s_" + k, det.get(k)); }
+                StringBuilder rs = new StringBuilder();
+                for (int i = 0; i < Math.min(items.size(), 120); i++) rs.append(items.get(i).text).append(" | ");
+                p.edit().putString("rawSleep", rs.toString()).apply();
+            }
             if (steps != null || active != null || sleepMin != null) day.put("ts", System.currentTimeMillis());
             data.put(d, day);
             // التمارين: 05/11/2026 01:48:44, 456kcal
@@ -217,9 +265,17 @@ public class ZeppReaderService extends AccessibilityService {
                     .putLong("lastRead", System.currentTimeMillis()).apply();
         } catch (Exception ignored) { }
 
-        if (!requested) return;
+        if (!requested) { sleepStep = 0; return; }
         boolean auto = "auto".equals(p.getString("mode", ""));
-        boolean timedOut = System.currentTimeMillis() - reqAt > 25000;
+        boolean timedOut = System.currentTimeMillis() - reqAt > 35000;
+        if (sleepStep == 1) {
+            // إحنا في صفحة النوم – استنى تحمّل، وبعدين ارجع وكمّل
+            if (System.currentTimeMillis() - sleepTapAt < 2200 && !timedOut) { handler.postDelayed(captureTask, 900); return; }
+            sleepStep = 2;
+            performGlobalAction(GLOBAL_ACTION_BACK);
+            handler.postDelayed(captureTask, 1200);
+            return;
+        }
         boolean morning = Calendar.getInstance().get(Calendar.HOUR_OF_DAY) < 12;
         boolean sleepFresh = sleepMin != null && (sleepDate == null || sleepDate.equals(today()));
         if (morning && sleepMin != null && !sleepFresh && !timedOut) {
@@ -236,6 +292,16 @@ public class ZeppReaderService extends AccessibilityService {
                 return;
             }
         }
+        if (sleepStep == 0 && sleepMin != null && !timedOut && Calendar.getInstance().get(Calendar.HOUR_OF_DAY) < 14) {
+            Pattern sp = Pattern.compile("(\\d{1,2})\\s*(hr|h|ساعة|ساعات|س)\\s*(\\d{1,2})\\s*(min|m|دقيقة|دقائق|د)");
+            for (Item it : items) {
+                if (sp.matcher(it.text).find() && it.text.length() < 60) {
+                    if (tap(it)) { sleepStep = 1; sleepTapAt = System.currentTimeMillis(); handler.postDelayed(captureTask, 2400); return; }
+                    break;
+                }
+            }
+        }
+        sleepStep = 0;
         for (int i = 0; i < scrolls; i++) {
             AccessibilityNodeInfo sc = findScrollable(root);
             if (sc != null) sc.performAction(AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD);

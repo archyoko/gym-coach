@@ -42,6 +42,7 @@ public class ZeppBridge extends Plugin {
         JSObject r = new JSObject();
         r.put("data", p.getString("data", "{}"));
         r.put("raw", p.getString("raw", ""));
+        r.put("rawSleep", p.getString("rawSleep", ""));
         r.put("lastRead", p.getLong("lastRead", 0));
         r.put("enabled", enabled());
         r.put("installed", installed());
