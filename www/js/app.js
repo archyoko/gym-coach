@@ -65,9 +65,9 @@ function eff(d) {
   const m = S.days[d] || {}, h = S.health[d] || {};
   return {
     w: m.w ?? h.weight ?? null,
-    steps: h.steps ?? m.steps ?? null,
-    kcal: h.kcal ?? m.kcal ?? null,
-    sleep: h.sleepMin ?? null,
+    steps: m.steps ?? h.steps ?? null,   // أرقام الساعة اليدوية تكسب خطوات الموبايل
+    kcal: m.kcal ?? h.kcal ?? null,
+    sleep: m.sleepMin ?? h.sleepMin ?? null,
     rhr: h.rhr ?? null,
     fat: h.fat ?? null,
     creatine: !!m.creatine,
@@ -244,7 +244,7 @@ function renderSyncLine() {
   if (!native) { el.innerHTML = `<span class="dot"></span><span>Health Connect بيشتغل في تطبيق الأندرويد</span>`; return; }
   if (syncing) { el.innerHTML = `<span class="dot"></span><span>بيحدّث من Health Connect…</span>`; return; }
   const ls = S.settings.lastSync;
-  if (!ls) { el.innerHTML = `<span class="dot bad"></span><span>Zepp والميزان مش مربوطين لسه</span><button id="hcGo">اربط دلوقتي</button>`; $('#hcGo').onclick = hcConnect; return; }
+  if (!ls) { el.innerHTML = `<span class="dot bad"></span><span>Health Connect مش مربوط لسه</span><button id="hcGo">اربط دلوقتي</button>`; $('#hcGo').onclick = hcConnect; return; }
   const m = Math.round((Date.now() - new Date(ls)) / 6e4);
   el.innerHTML = `<span class="dot ok"></span><span>آخر تحديث ${m < 1 ? 'دلوقتي' : m < 60 ? `من ${m} دقيقة` : `من ${Math.round(m / 60)} ساعة`}</span><button id="hcGo">حدّث</button>`;
   $('#hcGo').onclick = () => hcSync(true);
@@ -279,6 +279,8 @@ function verdict() {
 /* ================= الرئيسية ================= */
 function renderHome(el) {
   const t = today(), e = eff(t), set = S.settings, w = curWeek();
+  const yd = addDays(t, -1), ey = eff(yd), my = S.days[yd] || {};
+  const needMorning = !(S.days[t] || {}).w || my.kcal == null;
   const tdDay = todaysDay(), nd = nextDay();
   const sess = tdDay ? S.logs[sessKey(w, tdDay.key)] : null;
   const doneCount = sess ? Object.values(sess.ex).filter(x => x.length).length : 0;
@@ -290,10 +292,11 @@ function renderHome(el) {
   el.innerHTML = `
   <div class="hello"><small>${nice(t)} · ${daysIn < 0 ? `البرنامج يبدأ بعد ${-daysIn} يوم` : `الأسبوع ${w} من ${set.weeks}`}</small><h1>أهلاً ${esc(set.name)} 👋</h1></div>
   <div class="sync" id="syncline"></div>
+  ${needMorning ? `<button class="verdict warn" style="display:block;width:100%;text-align:start;margin-top:12px" id="morning"><h3>تسجيل الصبح ⏱ 20 ثانية</h3><p>الوزن + خطوات وحرق ونوم امبارح من الساعة.</p></button>` : ''}
   <div class="tiles mt">
-    <div class="tile"><small>الخطوات</small><b class="num">${fmt(e.steps)}</b><div class="sub">الهدف ${fmt(set.steps)}</div><div class="bar ${stepPct >= 100 ? 'ok' : ''}"><i style="width:${stepPct}%"></i></div></div>
-    <div class="tile"><small>الحرق الكلي</small><b class="num">${fmt(e.kcal)}</b><div class="sub">${e.kcal ? `الأكل ${fmt(set.kcal)} → عجز ~${fmt(e.kcal - set.kcal)}` : 'من ساعة Zepp'}</div></div>
-    <div class="tile"><small>النوم</small><b class="num">${e.sleep ? `${Math.floor(e.sleep / 60)}:${pad2(e.sleep % 60)}` : '—'}</b><div class="sub">الهدف 7–8 ساعات</div></div>
+    <div class="tile"><small>الخطوات</small><b class="num">${fmt(e.steps)}</b><div class="sub">${ey.steps ? `امبارح ${fmt(ey.steps)}` : `الهدف ${fmt(set.steps)}`}</div><div class="bar ${stepPct >= 100 ? 'ok' : ''}"><i style="width:${stepPct}%"></i></div></div>
+    <div class="tile"><small>الحرق امبارح</small><b class="num">${fmt(ey.kcal)}</b><div class="sub">${ey.kcal ? `الأكل ${fmt(set.kcal)} → عجز ~${fmt(ey.kcal - set.kcal)}` : 'من ساعة Zepp Active'}</div></div>
+    <div class="tile"><small>النوم امبارح</small><b class="num">${ey.sleep ? `${Math.floor(ey.sleep / 60)}:${pad2(ey.sleep % 60)}` : '—'}</b><div class="sub">الهدف 7–8 ساعات</div></div>
     <div class="tile" role="button" id="tW"><small>الوزن</small><b class="num">${lastW ? fmt(lastW.w, 1) : '—'}</b><div class="sub">${lastW ? (lastW.d === t ? 'النهارده' : short(lastW.d)) : 'اضغط وسجّل'}</div></div>
   </div>
   <div class="section-t">تمرين النهارده</div>
@@ -307,9 +310,10 @@ function renderHome(el) {
   </div>
   <div class="section-t">رأي الكابتن</div>
   <div class="verdict ${v.cls}"><h3>${v.t}</h3><p>${v.d}</p></div>
-  <button class="btn ghost block mt" id="qLog">سجّل وزن / ملاحظة النهارده</button>`;
+  <button class="btn ghost block mt" id="qLog">تسجيل الصبح / ملاحظة</button>`;
   renderSyncLine();
   $('#tW').onclick = $('#qLog').onclick = () => dayEntrySheet(t);
+  const mo = $('#morning'); if (mo) mo.onclick = () => dayEntrySheet(t);
   $('#cCr').onclick = () => { day(t).creatine = !day(t).creatine; save(); render(); };
   $('#cWa').onclick = () => { const d = day(t); d.water = r1(((d.water || 0) + 0.25) > set.water + 1 ? 0 : (d.water || 0) + 0.25); save(); render(); };
   $('#cMe').onclick = () => { tab = 'food'; render(); };
@@ -318,15 +322,26 @@ function renderHome(el) {
 
 function dayEntrySheet(d) {
   const m = S.days[d] || {}, h = S.health[d] || {};
-  openSheet(sheetHead(nice(d), 'تسجيل اليوم') + `
-    <label class="field"><span>الوزن الصبح (كجم)${h.weight ? ` – الميزان قال ${h.weight}` : ''}</span><input id="fW" class="inp num" inputmode="decimal" value="${m.w ?? ''}" placeholder="${h.weight ?? '89.6'}"></label>
-    ${!native || h.steps == null ? `<label class="field"><span>الخطوات (لو الساعة مش مربوطة)</span><input id="fS" class="inp num" inputmode="numeric" value="${m.steps ?? ''}"></label>` : ''}
+  const y = addDays(d, -1), my = S.days[y] || {}, hy = S.health[y] || {};
+  const sl = my.sleepMin ? `${Math.floor(my.sleepMin / 60)}.${pad2(Math.round(my.sleepMin % 60 / 6 * 10) / 10)}` : '';
+  openSheet(sheetHead(nice(d), 'تسجيل الصبح – 20 ثانية') + `
+    <label class="field"><span>الوزن الصبح بعد الحمام (كجم)${h.weight ? ` – الميزان قال ${h.weight}` : ''}</span><input id="fW" class="inp num" inputmode="decimal" value="${m.w ?? ''}" placeholder="${h.weight ?? ''}"></label>
+    <div class="section-t" style="margin-top:18px">من ساعة Zepp Active – يوم امبارح (${short(y)})</div>
+    <div class="grid3">
+      <label class="field" style="margin-top:0"><span>الخطوات</span><input id="fS" class="inp num" inputmode="numeric" value="${my.steps ?? ''}" placeholder="${hy.steps ?? ''}"></label>
+      <label class="field" style="margin-top:0"><span>الحرق الكلي</span><input id="fK" class="inp num" inputmode="numeric" value="${my.kcal ?? ''}"></label>
+      <label class="field" style="margin-top:0"><span>النوم (ساعات)</span><input id="fL" class="inp num" inputmode="decimal" value="${my.sleepMin ? r1(my.sleepMin / 60) : ''}" placeholder="7.5"></label>
+    </div>
+    <p class="muted small">الأرقام دي في شاشة "صحة" في Zepp Active. لو سبتها فاضية التطبيق بياخد خطوات الموبايل.</p>
     <label class="field"><span>ملاحظة (وجع، نوم وحش، أكل برة…)</span><textarea id="fN" class="inp">${esc(m.note || '')}</textarea></label>
     <button class="btn red block mt" id="fSave">حفظ</button>`, p => {
     $('#fSave', p).onclick = () => {
-      const x = day(d); const w = parseFloat($('#fW', p).value.replace(',', '.'));
-      if (!isNaN(w) && w > 30 && w < 250) x.w = w; else delete x.w;
-      const sEl = $('#fS', p); if (sEl) { const s = parseInt(sEl.value); if (!isNaN(s)) x.steps = s; else delete x.steps; }
+      const num = id => { const v = parseFloat($(id, p).value.replace(',', '.')); return isNaN(v) ? null : v; };
+      const x = day(d), xy = day(y);
+      const w = num('#fW'); if (w && w > 30 && w < 250) x.w = w; else delete x.w;
+      const st = num('#fS'); if (st != null && st >= 0) xy.steps = Math.round(st); else delete xy.steps;
+      const k = num('#fK'); if (k != null && k > 500) xy.kcal = Math.round(k); else delete xy.kcal;
+      const l = num('#fL'); if (l != null && l > 0 && l < 16) xy.sleepMin = Math.round(l * 60); else delete xy.sleepMin;
       x.note = $('#fN', p).value.trim() || undefined; save(); closeSheet(); render(); toast('اتسجّل ✓');
     };
   });
@@ -757,7 +772,7 @@ function profileSheet() {
 function hcSheet() {
   openSheet(sheetHead('Health Connect', 'Zepp + ميزان OKOK') + (native ? `
     <p style="line-height:1.8">التطبيق بيقرا من Health Connect: الخطوات، الحرق الكلي، النوم، النبض وقت الراحة، الوزن ونسبة الدهون. مبيكتبش حاجة.</p>
-    <div class="note"><span class="i">1</span><span><b>Zepp:</b> افتح Zepp ← Profile ← 3rd-party account linking ← Health Connect وفعّل كل البيانات.</span></div>
+    <div class="note"><span class="i">1</span><span><b>الساعة:</b> تطبيق Zepp Active (ساعات Pop) مبيبعتش لـ Health Connect على أندرويد، فالخطوات بتيجي من الموبايل وGoogle Fit، والحرق والنوم بتسجلهم الصبح من شاشة "تسجيل الصبح".</span></div>
     <div class="note mt"><span class="i">2</span><span><b>OKOK:</b> لو فيه ربط بـ Google Fit فعّله، وفي Google Fit فعّل "Sync Fit with Health Connect". لو مفيش، سجّل الوزن يدوي من الرئيسية.</span></div>
     <button class="btn red block mt" id="hc1">اربط / حدّث الأذونات</button>
     <button class="btn ghost block mt" id="hc2">افتح إعدادات Health Connect</button>
