@@ -1241,7 +1241,7 @@ function renderHome(el) {
   <div class="hello" style="display:flex;align-items:center;gap:12px"><div style="flex:1"><small>${nice(t)} · ${daysIn < 0 ? `البرنامج يبدأ بعد ${-daysIn} يوم` : `الأسبوع ${w} من ${set.weeks}`}</small><h1>أهلاً ${esc(set.name)} 👋</h1></div>
     <svg viewBox="0 0 100 100" width="44" height="44" aria-label="Lifestyle" style="flex:none"><rect width="100" height="100" rx="22" fill="var(--red)"/><polyline points="30,18 30,68 45,68 53,44 62,88 70,68 84,68" transform="translate(13 13) scale(.74)" fill="none" stroke="#fff" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
   <div class="sync" id="zeppline"></div>
-  ${ad ? `<div class="card pad mt" style="display:flex;gap:14px;align-items:center"><div style="text-align:center;min-width:76px"><b class="num" style="font-size:34px;color:${ad.score >= 80 ? 'var(--ok)' : ad.score >= 60 ? 'var(--warn)' : 'var(--red)'}">${ad.score}%</b><div class="small muted">التزام الأسبوع</div></div>
+  ${ad ? `<div class="card pad mt" style="display:flex;gap:14px;align-items:center"><div style="text-align:center"><div class="ring-s"><svg viewBox="0 0 84 84"><circle class="bg" cx="42" cy="42" r="36"/><circle class="fg" cx="42" cy="42" r="36" stroke="${ad.score >= 80 ? 'var(--ok)' : ad.score >= 60 ? 'var(--warn)' : 'var(--red)'}" stroke-dasharray="226.2" stroke-dashoffset="${226.2 * (1 - ad.score / 100)}"/></svg><b class="num">${ad.score}%</b></div><div class="small muted" style="margin-top:4px">التزام الأسبوع</div></div>
     <div style="flex:1;min-width:0"><div class="chips" style="margin-top:0">${Object.entries(ad.parts).filter(([, v]) => v != null).map(([k, v]) => `<span class="chip ${v >= .8 ? 'ok' : v < .5 ? 'red' : ''}">${PART[k]}<b class="num">${Math.round(v * 100)}%</b></span>`).join('')}</div>
     <div class="small" style="margin-top:8px">${streak ? `🔥 ${streak} أسبوع ورا بعض فوق 80%` : 'الهدف 80% – أول أسبوع يعدّيها يبدأ السلسلة 🔥'}</div></div></div>` : ''}
   ${coachMsgCard()}
@@ -1780,7 +1780,7 @@ function renderFood(el) {
   <div class="tile"><small>البروتين (جم)</small><b class="num">${fmt(ep)} / ${fmt(pr)}</b><div class="bar ok"><i style="width:${Math.min(100, ep / pr * 100)}%"></i></div></div></div>
   ${ms.map(m => `<div class="card mt">
     <div class="meal-h"><div><h3>${m.title}</h3><small>${m.time} · ${m.where} · <span class="num">${m.kcal}</span> سعر · <span class="num">${m.p}</span> جم بروتين${(S.mealPhotos[t] || []).filter(x => x.meal === m.id).length ? ` · 📸 ${(S.mealPhotos[t] || []).filter(x => x.meal === m.id).length}` : ''}</small></div>${future ? '' : `<label class="eat" style="cursor:pointer" aria-label="صوّر الطبق"><svg viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg><input type="file" accept="image/*" capture="environment" data-mp="${m.id}" hidden></label>`}${future ? '' : `<button class="eat ${eaten[m.id] ? 'on' : ''}" data-eat="${m.id}" aria-label="أكلتها">${ICON.check}</button>`}</div>
-    ${(() => { const rc = ((S.days[t] || {}).recipes || {})[m.id]; return rc ? `<div class="item" style="background:#fff5f5"><span class="food-ic" style="background:var(--red);color:#fff">📖</span><div><b>بدلها: ${esc(rc.name)}</b><small><span class="num">${rc.kcal}</span> سعر · <span class="num">${rc.p}</span> جم بروتين</small></div><button class="mini" data-rcm="${m.id}" aria-label="الوصفة">${ICON.arrowL}</button><button class="mini del" data-rcx="${m.id}" aria-label="شيل">${ICON.trash}</button></div>` : ''; })()}
+    ${(() => { const rc = ((S.days[t] || {}).recipes || {})[m.id]; return rc ? `<div class="item" style="background:var(--red-soft)"><span class="food-ic" style="background:var(--red);color:#fff">📖</span><div><b>بدلها: ${esc(rc.name)}</b><small><span class="num">${rc.kcal}</span> سعر · <span class="num">${rc.p}</span> جم بروتين</small></div><button class="mini" data-rcm="${m.id}" aria-label="الوصفة">${ICON.arrowL}</button><button class="mini del" data-rcx="${m.id}" aria-label="شيل">${ICON.trash}</button></div>` : ''; })()}
     ${m.special ? m.options.map(o => `<button class="item" style="width:100%;text-align:start" data-opt="${o.id}"><span class="food-ic" style="${m.pick === o.id ? 'background:var(--red);color:#fff' : ''}">${m.pick === o.id ? '✓' : ''}</span><div><b>${esc(o.name)}</b><small>${esc(o.desc)}</small><br><small><span class="num">${o.id === 'box' ? m.boxItems.reduce((a, x) => a + x.kcal, 0) : o.kcal}</span> سعر · <span class="num">${o.p}</span> جم بروتين</small></div></button>`).join('')
       : m.items.map(it => itemRow(it, m.id)).join('')}
     <div class="note"><span class="i">i</span><span class="lbl">ملاحظة</span><span>${esc(m.note)}</span></div>
@@ -1835,7 +1835,6 @@ function renderMenu(el) {
     ['shield', 'الكابتن (المراجعة اليومية)', () => (ghOn() && (S.coach.msgs || []).length ? coachMsgsSheet() : ghSheet()), ghOn() ? (S.settings.ghLast ? '✓ شغالة' : 'مستنية') : 'مش متفعّلة'],
     ['heart', 'مكان الجيم', gymSheet, S.settings.gym ? '✓' : ''],
     ['shield', 'قواعد الكابتن والمصادر', rulesSheet, ''],
-    ...(S.settings.gainImported ? [] : [['save', 'استيراد من The Gain Universe', gainSheet, '']]),
     ['report', 'أدوات تانية', moreSheet, '']
   ];
   el.innerHTML = `<div class="hello" style="padding-bottom:18px;border-bottom:1px solid var(--line)"><h1>أهلاً</h1><div style="font-size:22px">${esc(S.settings.name)} 👋</div></div>
@@ -1844,7 +1843,7 @@ function renderMenu(el) {
   el.querySelectorAll('[data-r]').forEach(b => b.onclick = rows[+b.dataset.r][2]);
 }
 function moreSheet() {
-  const items = [['سجل الأوزان وتعديلها', weightsSheet], ['إعدادات المراجعة اليومية', ghSheet], ...(S.settings.gainImported ? [['استيراد من The Gain تاني', gainSheet]] : [])];
+  const items = [['سجل الأوزان وتعديلها', weightsSheet], ['إعدادات المراجعة اليومية', ghSheet]];
   openSheet(sheetHead('أدوات تانية', 'حاجات مش هتحتاجها كتير') + items.map((x, i) => `<button class="row" data-m="${i}"><span>${x[0]}</span>${ICON.arr}</button>`).join(''), p => {
     p.querySelectorAll('[data-m]').forEach(b => b.onclick = () => { closeSheet(); items[+b.dataset.m][1](); });
   });

@@ -1,25 +1,45 @@
-/* أبيض نظيف + أحمر للفعل الأساسي + أسود للفعل التاني — زي روح تطبيق الكوتش */
+@font-face { font-family: "Alexandria"; font-style: normal; font-weight: 400; font-display: swap; src: url(../fonts/alexandria-arabic-400-normal.woff2) format("woff2"); unicode-range: U+0600-06FF,U+0750-077F,U+08A0-08FF,U+200C-200E,U+FB50-FDFF,U+FE70-FEFC; }
+@font-face { font-family: "Alexandria"; font-style: normal; font-weight: 400; font-display: swap; src: url(../fonts/alexandria-latin-400-normal.woff2) format("woff2"); unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+2000-206F,U+20AC,U+2122,U+2190-2199,U+2212,U+2215; }
+@font-face { font-family: "Alexandria"; font-style: normal; font-weight: 600; font-display: swap; src: url(../fonts/alexandria-arabic-600-normal.woff2) format("woff2"); unicode-range: U+0600-06FF,U+0750-077F,U+08A0-08FF,U+200C-200E,U+FB50-FDFF,U+FE70-FEFC; }
+@font-face { font-family: "Alexandria"; font-style: normal; font-weight: 600; font-display: swap; src: url(../fonts/alexandria-latin-600-normal.woff2) format("woff2"); unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+2000-206F,U+20AC,U+2122,U+2190-2199,U+2212,U+2215; }
+@font-face { font-family: "Alexandria"; font-style: normal; font-weight: 800; font-display: swap; src: url(../fonts/alexandria-arabic-800-normal.woff2) format("woff2"); unicode-range: U+0600-06FF,U+0750-077F,U+08A0-08FF,U+200C-200E,U+FB50-FDFF,U+FE70-FEFC; }
+@font-face { font-family: "Alexandria"; font-style: normal; font-weight: 800; font-display: swap; src: url(../fonts/alexandria-latin-800-normal.woff2) format("woff2"); unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+2000-206F,U+20AC,U+2122,U+2190-2199,U+2212,U+2215; }
+@font-face { font-family: "Alexandria"; font-style: normal; font-weight: 900; font-display: swap; src: url(../fonts/alexandria-arabic-900-normal.woff2) format("woff2"); unicode-range: U+0600-06FF,U+0750-077F,U+08A0-08FF,U+200C-200E,U+FB50-FDFF,U+FE70-FEFC; }
+@font-face { font-family: "Alexandria"; font-style: normal; font-weight: 900; font-display: swap; src: url(../fonts/alexandria-latin-900-normal.woff2) format("woff2"); unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+2000-206F,U+20AC,U+2122,U+2190-2199,U+2212,U+2215; }
+/* Lifestyle – خط Alexandria (مصمم مصري، على اسم إسكندرية) + أحمر البراند على رمادي بارد */
 :root {
-  --bg: #ffffff;
-  --ground: #f3f3f4;
-  --chip: #f2f2f3;
-  --line: #e6e6e8;
-  --ink: #0d0d0f;
-  --ink2: #6b6b72;
-  --ink3: #a1a1a8;
-  --red: #c8000a;
-  --red-soft: #fde8e9;
-  --ok: #138a4a;
-  --ok-soft: #e3f5ea;
-  --warn: #b56a00;
-  --warn-soft: #fff2dc;
-  --dark: #0d0d0f;
-  --dark2: #1b1b1f;
-  --r-card: 22px;
-  --r-btn: 16px;
-  --font: system-ui, -apple-system, "Segoe UI", "Noto Sans Arabic", Roboto, Tahoma, sans-serif;
-  --nav-h: 64px;
+  --bg: #ffffff;          /* سطح الكروت والشيتات */
+  --paper: #f3f4f6;       /* خلفية الشاشة */
+  --ground: #f0f1f4;
+  --chip: #eceef2;
+  --line: #e3e5ea;
+  --ink: #15171c;
+  --ink2: #626874;
+  --ink3: #9da2ad;
+  --red: #d7141e;
+  --red-deep: #8f0a12;
+  --red-soft: #fde9ea;
+  --ok: #13925a;
+  --ok-soft: #e2f4ea;
+  --warn: #b86e00;
+  --warn-soft: #fdf0dc;
+  --dark: #1e2128;
+  --dark2: #2a2e36;
+  --r-card: 24px;
+  --r-btn: 18px;
+  --font: "Alexandria", system-ui, "Noto Sans Arabic", Roboto, Tahoma, sans-serif;
+  --nav-h: 76px;
   color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1b1e24; --paper: #121419; --ground: #23272e; --chip: #262a32; --line: #2d323b;
+    --ink: #f1f2f4; --ink2: #a3a9b4; --ink3: #6f7682;
+    --red: #ef2a33; --red-deep: #a10d16; --red-soft: #3a1a1d;
+    --ok: #34c17f; --ok-soft: #173326; --warn: #f0a531; --warn-soft: #3a2c14;
+    --dark: #2a2e36; --dark2: #353a44;
+    color-scheme: dark;
+  }
 }
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); font-family: var(--font); font-size: 15px; }
@@ -298,3 +318,115 @@ table.t td { padding: 10px 6px; border-bottom: 1px solid var(--line); font-varia
 .mt { margin-top: 14px; }
 .link { color: var(--red); font-weight: 800; }
 @media (prefers-reduced-motion: reduce) { .media img.f1 { animation: none; opacity: 0; } .sheet .panel { animation: none; } .ring .fg { transition: none; } }
+
+
+/* ================= Lifestyle 2 – الشكل الجديد ================= */
+html, body { background: var(--paper); font-size: 15px; letter-spacing: 0; }
+body { -webkit-font-smoothing: antialiased; }
+.num { font-feature-settings: "tnum" 1, "lnum" 1; }
+
+/* الكروت على خلفية رمادي – من غير برواز */
+.card { background: var(--bg); border: 0; }
+.tile { background: var(--bg); border: 0; border-radius: 20px; padding: 16px; }
+.tile small { font-weight: 600; }
+.tile b { font-size: 28px; font-weight: 800; letter-spacing: -.3px; }
+.check { background: var(--bg); border: 0; border-radius: 18px; }
+.check.on { background: var(--ok-soft); }
+.section-t { font-size: 15px; color: var(--ink); font-weight: 800; margin: 26px 4px 12px; letter-spacing: 0; }
+
+/* العناوين */
+.topbar h1, .hello h1 { font-size: 30px; font-weight: 900; letter-spacing: -.4px; }
+.hello small { font-weight: 600; }
+.daytitle h2 { font-size: 38px; font-weight: 900; letter-spacing: -1px; }
+.iconbtn, .round { background: var(--bg); }
+
+/* شريط التابات العايم */
+#tabbar { inset: auto 14px calc(env(safe-area-inset-bottom, 0px) + 12px) 14px; height: 64px; padding: 0 8px; border: 0; border-radius: 32px; background: var(--dark); box-shadow: 0 10px 30px rgba(20, 22, 28, .28); max-width: 520px; margin: 0 auto; }
+#tabbar button { width: 52px; height: 48px; border-radius: 24px; transition: background .2s; }
+#tabbar svg { stroke: #9aa0ab; width: 25px; height: 25px; }
+#tabbar button.on { background: var(--red); }
+#tabbar button.on svg { stroke: #fff; }
+#tabbar button.on::after { display: none; }
+#screen { padding-bottom: calc(var(--nav-h) + env(safe-area-inset-bottom, 0px) + 28px); }
+#screen.has-cta { padding-bottom: calc(var(--nav-h) + env(safe-area-inset-bottom, 0px) + 104px); }
+.cta-bar { bottom: calc(var(--nav-h) + env(safe-area-inset-bottom, 0px) + 4px); background: linear-gradient(to top, var(--paper) 65%, transparent); }
+.toast { bottom: calc(var(--nav-h) + env(safe-area-inset-bottom, 0px) + 90px); background: var(--dark); }
+
+/* أيام الأسبوع */
+.day { background: var(--bg); border: 0; border-radius: 20px; padding: 12px 4px; }
+.day b { font-weight: 800; }
+
+/* كارت "تمرين النهارده" – الحاجة الوحيدة الجريئة: أحمر بخط النبض بتاع اللوجو */
+.today { position: relative; overflow: hidden; background: linear-gradient(135deg, var(--red) 0%, var(--red-deep) 100%); border-radius: 28px; padding: 22px 20px; }
+.today::after { content: ""; position: absolute; inset: auto auto -26px -16px; width: 210px; height: 110px; pointer-events: none; opacity: .14;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 230 120'%3E%3Cpolyline points='0,70 70,70 92,22 118,110 140,70 230,70' fill='none' stroke='white' stroke-width='14' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat center / contain; }
+.today > * { position: relative; z-index: 1; }
+.today small { color: #ffd6d8; font-weight: 600; }
+.today h3 { font-size: 30px; letter-spacing: -.5px; }
+.today p { color: #ffe9ea; }
+.today .btn.red { background: #fff; color: var(--red-deep); }
+
+/* الأزرار */
+.btn { font-weight: 800; letter-spacing: 0; }
+.btn.red { box-shadow: 0 6px 18px rgba(215, 20, 30, .28); }
+.btn.ghost { background: var(--bg); }
+.card .btn.ghost, .panel .btn.ghost { background: var(--chip); }
+.btn.outline { background: transparent; }
+.sq { border-radius: 14px; }
+.sq.black { background: var(--dark); }
+
+/* الشيبس – حبوب */
+.chip { border-radius: 999px; padding: 6px 12px; font-weight: 600; background: var(--chip); }
+.chip b { font-weight: 800; }
+
+/* التمارين */
+.thumb { border-radius: 20px; }
+.ex-name { font-weight: 800; }
+.pair-n { background: var(--dark); }
+
+/* الأكل */
+.meal-h h3 { font-weight: 900; font-size: 20px; }
+.meal-h { border-bottom-color: var(--line); }
+.food-ic { border-radius: 16px; font-weight: 800; }
+.eat { border: 0; background: var(--chip); }
+.item { border-bottom-color: var(--line); }
+.note { background: var(--ground); }
+
+/* الفورم والشيت */
+.inp { border: 1.5px solid transparent; background: var(--chip); font-weight: 800; }
+.inp:focus { border-color: var(--red); background: var(--bg); }
+.sheet { background: rgba(10, 11, 14, .55); }
+.sheet .panel { border-radius: 30px 30px 0 0; }
+.sheet-h h2 { font-weight: 900; letter-spacing: -.3px; }
+.close { background: var(--chip); }
+.verdict { border-radius: 22px; }
+.verdict.info { background: var(--bg); }
+.panel .verdict.info, .card .verdict.info { background: var(--ground); }
+.quick button, .rirs button, .pain button { border: 0; background: var(--chip); }
+.alt { border-color: var(--line); }
+
+/* القايمة */
+.rows { background: var(--bg); border: 0; border-radius: var(--r-card); padding: 0 16px; }
+.row:last-child { border-bottom: 0; }
+.row span { font-weight: 600; }
+
+/* حلقة الالتزام */
+.ring-s { position: relative; width: 84px; height: 84px; flex: none; }
+.ring-s svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+.ring-s circle { fill: none; stroke-width: 9; }
+.ring-s .bg { stroke: var(--chip); }
+.ring-s .fg { stroke-linecap: round; transition: stroke-dashoffset .8s ease-out; }
+.ring-s b { position: absolute; inset: 0; display: grid; place-items: center; font-size: 22px; font-weight: 900; }
+
+/* الجداول والرسم */
+table.t th { font-weight: 600; }
+.chart .avg { stroke-width: 3; }
+
+/* اللاعب (دايماً غامق) */
+.player, .rest { background: #15171c; }
+.p-info h2 { font-weight: 900; letter-spacing: -.3px; }
+
+.btn:focus-visible, .sq:focus-visible, .day:focus-visible, .row:focus-visible, #tabbar button:focus-visible, .chip:focus-visible { outline: 3px solid #4d8dff; outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { #tabbar button, .ring-s .fg { transition: none; } }
+.totals .tile b { font-size: 22px; }
+@media (prefers-color-scheme: dark) { #tabbar { background: #262a32; box-shadow: 0 10px 30px rgba(0, 0, 0, .5); border: 1px solid #333944; } }
