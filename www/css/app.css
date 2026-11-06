@@ -494,3 +494,24 @@ html, body { font-size: 14.5px; }
 .totals .tile b { font-size: 20px; }
 .note { font-size: 13px; }
 .adh .ring-s b { position: absolute; inset: 0; display: grid; place-items: center; font-size: 15px; }
+
+/* ===== ترتيب: مسافات سطور كفاية + كل سطر معلومة واحدة ===== */
+html, body { line-height: 1.5; }
+h1, h2, h3, .today h3, .daytitle h2 { line-height: 1.25; }
+button, .btn { line-height: 1.35; }
+.link { line-height: 1.6; }
+.chip, .chip b { line-height: 1.4; }
+.item { gap: 12px; padding: 12px 16px; }
+.item b { font-size: 15px; font-weight: 700; line-height: 1.4; }
+.item small { display: block; font-size: 12.5px; margin-top: 2px; }
+.item .raw { font-size: 12px; color: var(--ok); font-weight: 600; margin-top: 2px; }
+.item .swapped { margin-top: 2px; }
+.qty { flex: none; min-width: 58px; text-align: center; background: var(--chip); border-radius: 14px; padding: 6px 8px; }
+.qty .num { display: block; font-size: 16px; font-weight: 800; line-height: 1.2; }
+.qty small { display: block; font-size: 11px; color: var(--ink2); margin: 0; }
+.food-ic { width: 40px; height: 40px; border-radius: 13px; font-size: 15px; }
+.meal-h small { display: block; margin-top: 2px; font-size: 12.5px; }
+.note.small { padding: 10px 16px; font-size: 12.5px; color: var(--ink2); }
+.ex { padding: 14px 16px; }
+.ex-en { margin-top: 1px; }
+.hrow .v small { display: block; margin: 2px 0 0; }

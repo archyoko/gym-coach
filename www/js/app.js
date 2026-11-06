@@ -1334,8 +1334,7 @@ function renderWorkout(el) {
           <button class="sq black" data-log="${ex.id}" aria-label="سجّل">${ICON.plus}</button>
           ${ex.alts.length ? `<button class="sq red" data-swap="${ex.id}" aria-label="بدّل">${ICON.swap}</button>` : ''}</div>
         <div class="chips">
-          <span class="chip">مجموعة<b class="num">${ex.sets}</b></span>
-          <span class="chip">${unitTxt(ex)}<b class="num">${repsTxt(ex)}</b></span>
+          <span class="chip"><b class="num" style="margin:0">${ex.sets} × ${repsTxt(ex)}</b> ${unitTxt(ex)}</span>
           ${ex.rir !== '—' ? `<span class="chip ${ex.noFail || ex.pain ? 'red' : ''}">RIR<b class="num">${ex.rir}</b></span>` : ''}
           ${ex.rest ? `<span class="chip">راحة<b class="num">${restTxt(ex.rest)}</b></span>` : ''}
         </div>
@@ -1358,7 +1357,7 @@ function renderWorkout(el) {
   <button class="link small" id="busyBtn" style="margin:0 4px 12px">${isBusy(w) ? 'رجّع الأسبوع 4 أيام' : 'أسبوع مزنوق؟ خليه 3 أيام'}</button>
   <button class="banner" id="warmBtn" style="margin-bottom:14px"><b>🔥 التسخين · ${WARMUP[warmKind(dk)].time}</b><span>${sess && sess.warm ? '✓ سخّنت' : 'قبل أول تمرين – عشان متتصابش'}</span></button>
   ${groups.map(g => `<div class="card">${g.length > 1 ? g.map((ex, i) => exHtml(ex, i + 1)).join('') : exHtml(g[0])}
-     ${g.length > 1 ? `<div class="note"><span class="i">i</span><span class="lbl">ملاحظة</span><span>${esc(g[0].kind === 'warm' ? 'إحماء ورا بعض من غير راحة طويلة. ' : '')}${esc(g[0].note)}</span></div>` : `<div class="note"><span class="i">i</span><span class="lbl">ملاحظة</span><span>${esc(g[0].note)}</span></div>`}
+     ${g.length > 1 ? `<div class="note small"><span>${g[0].kind === 'warm' ? 'الاتنين ورا بعض من غير راحة' : 'سوبر سِت: الاتنين ورا بعض'}</span></div>` : ''}
    </div>`).join('')}
   <div class="cta-bar"><button class="btn red" id="startBtn">${sess && Object.keys(sess.ex).length ? 'كمّل التمرين' : 'ابدأ التمرين'} ${ICON.arrowL}</button></div>`;
   el.classList.add('has-cta');
@@ -1751,7 +1750,7 @@ function rawTxt(it) {
   const def = it.swapped ? SHOP_ALT[it.name] : SHOP[it.id];
   if (!def || Math.abs(def.f - 1) < 0.1) return '';
   const raw = Math.round(it.g * def.f / 5) * 5;
-  return def.f < 1 ? ` مسلوق · <b>${raw} جم ناشف</b>` : ` مطبوخ · <b>${raw} جم ني</b>`;
+  return `<div class="raw">${def.f < 1 ? 'قبل السلق' : 'قبل الطبخ'}: <bdi class="num">${raw}</bdi> جم ${def.f < 1 ? 'ناشف' : 'ني'}</div>`;
 }
 function renderFood(el) {
   const td = today();
@@ -1764,7 +1763,7 @@ function renderFood(el) {
   const ek = ms.reduce((a, m) => a + (eaten[m.id] ? m.kcal : 0), 0), ep = ms.reduce((a, m) => a + (eaten[m.id] ? m.p : 0), 0);
   const banner = dt === 'mom' ? `<div class="verdict ok"><h3>جمعة ماما 😄</h3><p>ميزانية النهارده ~${fmt(kc)} سعر. استمتع: البروتين الأول، طبق واحد مليان، حتة حلو واحدة. ومتصومش بكرة.</p></div>`
     : dt === 'lecture' ? `<div class="verdict info"><h3>يوم محاضرة 🎓</h3><p>العشا برة أو في البريك. اختار تحت اللي أكلته عشان الحسبة تبقى صح.</p></div>` : '';
-  const itemRow = (it, mid) => `<div class="item"><span class="food-ic">${esc(it.name.trim()[0])}</span><div><b>${esc(it.name)}</b><small><span class="num">${it.g}</span> جم${rawTxt(it)} · <span class="num">${it.kcal}</span> سعر · <span class="num">${it.p}</span> جم بروتين</small>${it.swapped ? `<div class="swapped">بدل ${esc(it.base)}</div>` : ''}${it.adj ? `<div class="swapped">${it.adj > 0 ? '+' : ''}${it.adj} جم من تعديل الكابتن</div>` : ''}</div>${(DIET.meals.find(x => x.id === mid).items.find(x => x.id === it.id) || {}).alts?.length ? `<button class="sq red" data-fs="${it.id}" aria-label="بدّل">${ICON.swap}</button>` : ''}</div>`;
+  const itemRow = (it, mid) => `<div class="item"><span class="food-ic">${esc(it.name.trim()[0])}</span><div><b>${esc(it.name)}</b><small><bdi class="num">${it.kcal}</bdi> سعر · <bdi class="num">${it.p}</bdi> بروتين</small>${rawTxt(it)}${it.swapped ? `<div class="swapped">بدل ${esc(it.base)}</div>` : ''}${it.adj ? `<div class="swapped">${it.adj > 0 ? '+' : ''}${it.adj} جم من تعديل الكابتن</div>` : ''}</div>${(DIET.meals.find(x => x.id === mid).items.find(x => x.id === it.id) || {}).alts?.length ? `<button class="mini" data-fs="${it.id}" aria-label="بدّل">${ICON.swap}</button>` : ''}<span class="qty"><bdi class="num">${it.g}</bdi><small>جم</small></span></div>`;
   el.innerHTML = `<div class="topbar"><h1>النظام الغذائي</h1><button class="iconbtn" id="dInfo" aria-label="معلومات">${ICON.info}</button></div>
   <div class="quick" style="padding:0 0 12px">${week.map(d => `<button data-fd="${d}" style="${d === t ? 'background:var(--red);color:#fff;border-color:var(--red)' : ''};height:auto;padding:8px 12px;line-height:1.3"><span style="display:block;font-size:13px">${d === td ? 'النهارده' : d === addDays(td, -1) ? 'امبارح' : AR_DAYS[parseISO(d).getDay()]}</span><small style="font-size:11px;opacity:.8">${tag(d)}</small></button>`).join('')}</div>
   ${future ? `<p class="muted small" style="margin:0 4px 10px">ده أكل ${nice(t)} – هتعلّم عليه يومها.</p>` : ''}
@@ -1773,12 +1772,12 @@ function renderFood(el) {
   <div class="totals"><div class="tile"><small>السعرات</small><b class="num">${fmt(ek)} / ${fmt(kc)}</b><div class="bar ok"><i style="width:${Math.min(100, ek / kc * 100)}%"></i></div></div>
   <div class="tile"><small>البروتين (جم)</small><b class="num">${fmt(ep)} / ${fmt(pr)}</b><div class="bar ok"><i style="width:${Math.min(100, ep / pr * 100)}%"></i></div></div></div>
   ${ms.map(m => `<div class="card mt">
-    <div class="meal-h"><div><h3>${m.title}</h3><small>${m.time} · ${m.where} · <span class="num">${m.kcal}</span> سعر · <span class="num">${m.p}</span> جم بروتين${(S.mealPhotos[t] || []).filter(x => x.meal === m.id).length ? ` · 📸 ${(S.mealPhotos[t] || []).filter(x => x.meal === m.id).length}` : ''}</small></div>${future ? '' : `<label class="eat" style="cursor:pointer" aria-label="صوّر الطبق"><svg viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg><input type="file" accept="image/*" capture="environment" data-mp="${m.id}" hidden></label>`}${future ? '' : `<button class="eat ${eaten[m.id] ? 'on' : ''}" data-eat="${m.id}" aria-label="أكلتها">${ICON.check}</button>`}</div>
+    <div class="meal-h"><div><h3>${m.title}</h3><small>${m.time} · <bdi class="num">${m.kcal}</bdi> سعر · <bdi class="num">${m.p}</bdi> بروتين${(S.mealPhotos[t] || []).filter(x => x.meal === m.id).length ? ` · 📸 ${(S.mealPhotos[t] || []).filter(x => x.meal === m.id).length}` : ''}</small></div>${future ? '' : `<label class="eat" style="cursor:pointer" aria-label="صوّر الطبق"><svg viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg><input type="file" accept="image/*" capture="environment" data-mp="${m.id}" hidden></label>`}${future ? '' : `<button class="eat ${eaten[m.id] ? 'on' : ''}" data-eat="${m.id}" aria-label="أكلتها">${ICON.check}</button>`}</div>
     ${(() => { const rc = ((S.days[t] || {}).recipes || {})[m.id]; return rc ? `<div class="item" style="background:var(--red-soft)"><span class="food-ic" style="background:var(--red);color:#fff">📖</span><div><b>بدلها: ${esc(rc.name)}</b><small><span class="num">${rc.kcal}</span> سعر · <span class="num">${rc.p}</span> جم بروتين</small></div><button class="mini" data-rcm="${m.id}" aria-label="الوصفة">${ICON.arrowL}</button><button class="mini del" data-rcx="${m.id}" aria-label="شيل">${ICON.trash}</button></div>` : ''; })()}
     ${m.special ? m.options.map(o => `<button class="item" style="width:100%;text-align:start" data-opt="${o.id}"><span class="food-ic" style="${m.pick === o.id ? 'background:var(--red);color:#fff' : ''}">${m.pick === o.id ? '✓' : ''}</span><div><b>${esc(o.name)}</b><small>${esc(o.desc)}</small><br><small><span class="num">${o.id === 'box' ? m.boxItems.reduce((a, x) => a + x.kcal, 0) : o.kcal}</span> سعر · <span class="num">${o.p}</span> جم بروتين</small></div></button>`).join('')
       : m.items.map(it => itemRow(it, m.id)).join('')}
     <div class="note"><span class="i">i</span><span class="lbl">ملاحظة</span><span>${esc(m.note)}</span></div>
-    ${future ? '' : `<button class="link small" data-rcfor="${m.id}" style="display:block;margin:0 16px 14px">📖 نفسك في أكلة تانية؟ وصفة على قد سعرات ${esc(m.title)}</button>`}</div>`).join('')}
+    ${future ? '' : `<button class="link small" data-rcfor="${m.id}" style="display:block;margin:0 16px 14px;line-height:1.6">📖 وصفة تانية بنفس السعرات</button>`}</div>`).join('')}
   ${(() => { const ex = (S.days[t] || {}).extras || []; const tot = extraOf(t); return `<div class="card mt"><div class="meal-h"><div><h3>أكل زيادة</h3><small>حلو، مشروب، سناك، عزومة · ${tot ? `<span class="num">${tot}</span> سعر النهارده` : 'مفيش لسه'}</small></div><button class="sq red" id="exAdd" aria-label="ضيف">${ICON.plus}</button></div>
     ${ex.map((e, i) => `<div class="item"><span class="food-ic">${esc(e.name.trim()[0])}</span><div><b>${esc(e.name)}</b><small><span class="num">${e.kcal}</span> سعر</small></div><button class="mini del" data-exdel="${i}" aria-label="مسح">${ICON.trash}</button></div>`).join('')}
     ${!ex.length ? '<p class="muted small" style="margin:0;padding:12px 16px">اضغط + واختار اللي أكلته من القايمة – السعرات محسوبة جاهزة.</p>' : ''}</div>`; })()}`;
