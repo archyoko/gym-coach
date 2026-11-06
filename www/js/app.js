@@ -886,7 +886,7 @@ async function ghSync(loud) {
 function coachMsgCard() {
   const msgs = S.coach.msgs || []; if (!msgs.length) return '';
   const m = msgs[msgs.length - 1];
-  return `<button class="verdict ${S.coach.unread ? 'ok' : 'info'}" id="coachMsg" style="display:block;width:100%;text-align:start;margin-top:12px"><h3>🧢 رسالة الكابتن ${S.coach.unread ? '· جديدة' : ''}</h3><p><b>${esc(m.title || '')}</b> ${esc((m.body || '').slice(0, 140))}${(m.body || '').length > 140 ? '…' : ''}</p><small class="muted">${esc(m.date || '')}</small></button>`;
+  return `<button class="banner ok" id="coachMsg"><b>🧢 ${esc(m.title || 'رسالة الكابتن')}</b><span>${esc((m.body || '').slice(0, 90))}${(m.body || '').length > 90 ? '…' : ''}</span></button>`;
 }
 function coachMsgsSheet() {
   const msgs = (S.coach.msgs || []).slice().reverse();
@@ -960,8 +960,7 @@ function shopState() {
 function shopCard() {
   const sh = shopState(); const list = shopCompute(sh.start);
   const done = list.filter(x => sh.bought[x.id]).length, end = addDays(sh.start, 13), left = diffDays(end, today());
-  return `<div class="card mt"><div class="meal-h"><div><h3>🛒 لستة الأسبوعين</h3><small>${short(sh.start)} → ${short(end)} · اشتريت <span class="num">${done}/${list.length}</span>${left < 0 ? ' · <b class="down">خلصت – اعمل لستة جديدة</b>' : left <= 2 ? ` · <b class="down">فاضل ${left + 1} يوم</b>` : ''}</small></div><button class="sq black" id="shopOpen" aria-label="افتح">${ICON.arrowL}</button></div>
-    <div class="bar ok" style="margin:0 16px 14px"><i style="width:${list.length ? done / list.length * 100 : 0}%"></i></div></div>`;
+  return `<button class="pill-btn" id="shopOpen"><b>🛒 السوبر ماركت</b><small>${left < 0 ? '<span class="down">اعمل لستة جديدة</span>' : `اشتريت <span class="num">${done}/${list.length}</span>`}</small></button>`;
 }
 function shopSheet() {
   const sh = shopState(); const list = shopCompute(sh.start);
@@ -1237,50 +1236,46 @@ function renderHome(el) {
   const mealsEaten = Object.values((S.days[t] || {}).meals || {}).filter(Boolean).length;
   const stepPct = e.steps ? Math.min(100, e.steps / set.steps * 100) : 0;
   const daysIn = diffDays(t, set.start);
+  const sq = sleepQ(t);
+  // بانر واحد بس – الأهم
+  const banner = (S.coach.unread && coachMsgCard())
+    || (sq && sq.level === 'bad' ? `<button class="banner warn" id="sqBan"><b>😴 نومك امبارح ${sq.score}/100</b><span>${(sleepTips(sq).slice(-1)[0] || '')}</span></button>` : '')
+    || (needMorning ? `<button class="banner" id="morning"><b>⚖️ اتوزن الصبح</b><span>${zeppState.enabled ? 'اطلع على الميزان وافتح التفاصيل في OKOK – بيتسجّل لوحده.' : 'الوزن ونوم امبارح.'}</span></button>` : '')
+    || (new Date().getDay() === 5 && !checkinThisWeek() && tp ? `<button class="banner" id="ckBan"><b>✍️ تشيك إن الأسبوع</b><span>4 أسئلة + مقاس الوسط.</span></button>` : '')
+    || (photoDue() && [5, 6].includes(new Date().getDay()) ? `<button class="banner" id="phBan"><b>📸 ميعاد صور التقدّم</b><span>قدام، جنب، ضهر.</span></button>` : '');
+  const hero = tp && !tp.today && tp.miss
+    ? `<div class="today"><small>فاتك يوم ${tp.miss.d.label}</small><h3>${tp.miss.d.title}</h3><p>${tp.doneToday ? 'اعمله بكرة لو تقدر.' : 'اعمله النهارده بدل الراحة.'}</p>${tp.doneToday ? '' : `<button class="btn hero-go" id="goMiss">ابدأ ${ICON.arrowL}</button>`}</div>`
+    : tdDay ? `<div class="today"><small>تمرين النهارده · ${tdDay.label}</small><h3>${tdDay.title}</h3><p>${tdDay.sub}${doneCount ? ` · خلصت ${doneCount} تمرين` : ''}</p>
+        ${tp && tp.today ? `<div class="hero-ready"><span>${READY_TXT[rd.level][0]}</span>${['good', 'meh', 'tired'].map((f, i) => `<button class="${rd.feel === f ? 'on' : ''}" data-feel="${f}">${['كويس', 'نص نص', 'مرهق'][i]}</button>`).join('')}</div>${rd.level !== 'green' ? `<p class="hero-note">${READY_TXT[rd.level][1]}</p>` : ''}` : ''}
+        ${tp && tp.today && tp.miss ? `<p class="hero-note">وفاتك ${tp.miss.d.title} – ${isBusy(w) ? 'الأسبوع بقى 3 أيام.' : 'اعمله في أقرب يوم راحة.'}</p>` : ''}
+        <button class="btn hero-go" id="goW">${doneCount ? 'كمّل التمرين' : 'ابدأ التمرين'} ${ICON.arrowL}</button></div>`
+      : `<div class="today rest"><small>يوم راحة</small><h3>REST</h3><p>الجاي ${nd.label}: ${nd.title}. امشي ${fmt(set.steps)} خطوة النهارده.</p></div>`;
+  const cell = (id, label, val, on) => `<button class="stat ${on ? 'on' : ''}" id="${id}"><small>${label}</small><b class="num">${val}</b></button>`;
   el.innerHTML = `
-  <div class="hello" style="display:flex;align-items:center;gap:12px"><div style="flex:1"><small>${nice(t)} · ${daysIn < 0 ? `البرنامج يبدأ بعد ${-daysIn} يوم` : `الأسبوع ${w} من ${set.weeks}`}</small><h1>أهلاً ${esc(set.name)} 👋</h1></div>
-    <svg viewBox="0 0 100 100" width="44" height="44" aria-label="Lifestyle" style="flex:none"><rect width="100" height="100" rx="22" fill="var(--red)"/><polyline points="30,18 30,68 45,68 53,44 62,88 70,68 84,68" transform="translate(13 13) scale(.74)" fill="none" stroke="#fff" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+  <div class="hello"><div><small>${nice(t)} · ${daysIn < 0 ? `البرنامج يبدأ بعد ${-daysIn} يوم` : `الأسبوع ${w} من ${set.weeks}`}</small><h1>أهلاً ${esc(set.name)}</h1></div>
+    <svg viewBox="0 0 100 100" width="38" height="38" aria-label="Lifestyle" style="flex:none"><rect width="100" height="100" rx="24" fill="var(--red)"/><polyline points="30,18 30,68 45,68 53,44 62,88 70,68 84,68" transform="translate(13 13) scale(.74)" fill="none" stroke="#fff" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
   <div class="sync" id="zeppline"></div>
-  ${ad ? `<div class="card pad mt" style="display:flex;gap:14px;align-items:center"><div style="text-align:center"><div class="ring-s"><svg viewBox="0 0 84 84"><circle class="bg" cx="42" cy="42" r="36"/><circle class="fg" cx="42" cy="42" r="36" stroke="${ad.score >= 80 ? 'var(--ok)' : ad.score >= 60 ? 'var(--warn)' : 'var(--red)'}" stroke-dasharray="226.2" stroke-dashoffset="${226.2 * (1 - ad.score / 100)}"/></svg><b class="num">${ad.score}%</b></div><div class="small muted" style="margin-top:4px">التزام الأسبوع</div></div>
-    <div style="flex:1;min-width:0"><div class="chips" style="margin-top:0">${Object.entries(ad.parts).filter(([, v]) => v != null).map(([k, v]) => `<span class="chip ${v >= .8 ? 'ok' : v < .5 ? 'red' : ''}">${PART[k]}<b class="num">${Math.round(v * 100)}%</b></span>`).join('')}</div>
-    <div class="small" style="margin-top:8px">${streak ? `🔥 ${streak} أسبوع ورا بعض فوق 80%` : 'الهدف 80% – أول أسبوع يعدّيها يبدأ السلسلة 🔥'}</div></div></div>` : ''}
-  ${coachMsgCard()}
-  ${(() => { const q = sleepQ(t); if (!q || q.level !== 'bad') return ''; const tip = sleepTips(q); return `<button class="verdict warn" id="sqBan" style="display:block;width:100%;text-align:start;margin-top:12px"><h3>😴 نومك امبارح ${q.score}/100</h3><p>${tip[tip.length - 1] || ''}</p></button>`; })()}
-  ${new Date().getDay() === 5 && !checkinThisWeek() && tp ? `<button class="verdict warn" style="display:block;width:100%;text-align:start;margin-top:12px" id="ckBan"><h3>تشيك إن الأسبوع ✍️ 30 ثانية</h3><p>طاقة، جوع، نوم، ضغط، مزاج + مقاس الوسط.</p></button>` : ''}
-  ${photoDue() && [5, 6].includes(new Date().getDay()) ? `<button class="verdict info" style="display:block;width:100%;text-align:start;margin-top:12px" id="phBan"><h3>ميعاد صور التقدّم 📸</h3><p>قدام، جنب، ضهر – دقيقة واحدة.</p></button>` : ''}
-  ${needMorning ? `<button class="verdict warn" style="display:block;width:100%;text-align:start;margin-top:12px" id="morning"><h3>تسجيل الصبح ⏱ 20 ثانية</h3><p>${zeppState.enabled ? 'اتوزن وافتح التفاصيل في OKOK – بيتسجّل لوحده. أو اكتبه هنا.' : 'الوزن + خطوات وسعرات ونوم امبارح من الساعة.'}</p></button>` : ''}
-  <div class="tiles mt">
-    <div class="tile"><small>الخطوات</small><b class="num">${fmt(e.steps)}</b><div class="sub">${ey.steps ? `امبارح ${fmt(ey.steps)}` : `الهدف ${fmt(set.steps)}`}</div><div class="bar ${stepPct >= 100 ? 'ok' : ''}"><i style="width:${stepPct}%"></i></div></div>
-    <div class="tile"><small>الحرق امبارح (تقديري)</small><b class="num">${fmt(ey.kcal)}</b><div class="sub">${ey.kcal ? `نشاط ${fmt(ey.active)} + راحة ${fmt(bmr(yd))} · عجز ~${fmt(ey.kcal - set.kcal)}` : 'من ساعة Zepp Active'}</div></div>
-    ${(() => { const q = sleepQ(t); return `<div class="tile" role="button" id="tS"><small>نوم امبارح</small><b class="num">${e.sleep ? `${Math.floor(e.sleep / 60)}:${pad2(e.sleep % 60)}` : '—'}${q ? ` <span style="font-size:15px">· ${q.score}</span>` : ''}</b><div class="sub">${q ? `${SQ_TXT[q.level].join(' ')} – اضغط للتفاصيل` : 'الهدف 7–8 ساعات · اضغط'}</div></div>`; })()}
-    <div class="tile" role="button" id="tW"><small>الوزن</small><b class="num">${lastW ? fmt(lastW.w, 1) : '—'}</b><div class="sub">${lastW ? (lastW.d === t ? 'النهارده' : short(lastW.d)) : 'اضغط وسجّل'}</div></div>
+  ${banner ? `<div class="mt">${banner}</div>` : ''}
+  <div class="mt">${hero}</div>
+  <div class="stats mt">
+    ${cell('tSt', 'خطوات', e.steps != null ? fmt(e.steps) : '—', stepPct >= 100)}
+    ${cell('tS', 'نوم', e.sleep ? `${Math.floor(e.sleep / 60)}:${pad2(e.sleep % 60)}${sq ? `<i class="q ${sq.level}">${sq.score}</i>` : ''}` : '—')}
+    ${cell('tW', 'وزن', lastW ? fmt(lastW.w, 1) : '—', lastW && lastW.d === t)}
+    ${cell('cMe', 'وجبات', `${mealsEaten}/3`, mealsEaten === 3)}
+    ${cell('cWa', 'مية (لتر)', `${fmt(e.water, 2)}/${set.water}`, e.water >= set.water)}
+    ${cell('cCr', 'كرياتين', e.creatine ? '✓' : '5 جم', e.creatine)}
   </div>
-  <div class="section-t">تمرين النهارده</div>
-  ${tp && tp.today ? `<div class="card pad" style="margin-bottom:12px"><div style="display:flex;align-items:center;gap:10px"><b style="flex:1">${READY_TXT[rd.level][0]}</b>${['good', 'meh', 'tired'].map((f, i) => `<button class="chip ${rd.feel === f || (!rd.feel && f === 'good' && false) ? 'red' : ''}" data-feel="${f}">${['كويس', 'نص نص', 'مرهق'][i]}</button>`).join('')}</div>
-    <p class="small muted" style="margin:8px 0 0">${READY_TXT[rd.level][1]}${rd.why.length ? ' (' + rd.why.join(' · ') + ')' : ''}</p></div>` : ''}
-  ${tp && !tp.today && tp.miss ? `<div class="today" style="background:var(--red)"><div style="flex:1"><small style="color:#ffd9db">فاتك يوم ${tp.miss.d.label}</small><h3>${tp.miss.d.title}</h3><p style="color:#fff">${tp.doneToday ? 'اعمله بكرة لو تقدر.' : 'اعمله النهارده بدل الراحة.'}</p></div>${tp.doneToday ? '' : `<button class="btn" style="background:#fff;color:var(--red)" id="goMiss">ابدأ ${ICON.arrowL}</button>`}</div>`
-    : tdDay ? `<div class="today"><div style="flex:1"><small>${tdDay.label} · يوم ${DAYS.indexOf(tdDay) + 1}</small><h3>${tdDay.title}</h3><p>${tdDay.sub}${doneCount ? ` · خلصت ${doneCount} تمرين` : ''}</p></div><button class="btn red" id="goW">${doneCount ? 'كمّل' : 'ابدأ'} ${ICON.arrowL}</button></div>`
-      : `<div class="today"><div style="flex:1"><small>يوم راحة</small><h3>REST</h3><p>الجاي: ${nd.label} – ${nd.title}. امشي ${fmt(set.steps)} خطوة.</p></div></div>`}
-  ${tp && tp.today && tp.miss ? `<p class="small" style="margin:8px 4px 0;color:var(--warn)">وفاتك ${tp.miss.d.title} يوم ${tp.miss.d.label} – ${isBusy(w) ? 'الأسبوع اتحوّل 3 أيام.' : 'اعمله في أقرب يوم راحة.'}</p>` : ''}
-  ${tp && isBusy(w) ? `<p class="small muted" style="margin:6px 4px 0">الأسبوع ده 3 أيام (LOWER B اتشال)</p>` : ''}
-  <div class="section-t">النهارده</div>
-  <div class="checks">
-    <button class="check ${e.creatine ? 'on' : ''}" id="cCr">كرياتين<b>${e.creatine ? '✓ 5 جم' : '5 جم'}</b></button>
-    <button class="check ${e.water >= set.water ? 'on' : ''}" id="cWa">مية<b class="num">${fmt(e.water, 2)} / ${set.water}</b></button>
-    <button class="check ${mealsEaten === 3 ? 'on' : ''}" id="cMe">الوجبات<b class="num">${mealsEaten} / 3</b></button>
-  </div>
-  <div class="section-t">رأي الكابتن</div>
-  <div class="verdict ${v.cls}"><h3>${v.t}</h3><p>${v.d}</p></div>
-  <div class="grid2 mt"><button class="btn ghost sm" id="qLog">تسجيل الصبح</button><button class="btn ghost sm" id="qSay">💬 قول للكابتن</button></div>`;
+  ${ad ? `<div class="adh mt"><div class="ring-s sm"><svg viewBox="0 0 84 84"><circle class="bg" cx="42" cy="42" r="36"/><circle class="fg" cx="42" cy="42" r="36" stroke="${ad.score >= 80 ? 'var(--ok)' : ad.score >= 60 ? 'var(--warn)' : 'var(--red)'}" stroke-dasharray="226.2" stroke-dashoffset="${226.2 * (1 - ad.score / 100)}"/></svg><b class="num">${ad.score}</b></div>
+    <div><b>التزام الأسبوع</b><small>${streak ? `🔥 ${streak} أسبوع ورا بعض فوق 80%` : 'الهدف 80%'}</small></div></div>` : ''}`;
   renderSyncLine();
-  $('#tW').onclick = $('#qLog').onclick = () => dayEntrySheet(t);
+  $('#tW').onclick = () => dayEntrySheet(t);
+  $('#tSt').onclick = () => dayEntrySheet(t);
   const mo = $('#morning'); if (mo) mo.onclick = () => dayEntrySheet(t);
   const pb = $('#phBan'); if (pb) pb.onclick = () => photoSessionSheet();
   const cm = $('#coachMsg'); if (cm) cm.onclick = coachMsgsSheet;
   $('#tS').onclick = () => sleepSheet(t);
   const sqb = $('#sqBan'); if (sqb) sqb.onclick = () => sleepSheet(t);
   const ck = $('#ckBan'); if (ck) ck.onclick = checkinSheet;
-  $('#qSay').onclick = sayCoachSheet;
   $('#cCr').onclick = () => { day(t).creatine = !day(t).creatine; save(); render(); };
   $('#cWa').onclick = () => { const d = day(t); d.water = r1(((d.water || 0) + 0.25) > set.water + 1 ? 0 : (d.water || 0) + 0.25); save(); render(); };
   $('#cMe').onclick = () => { tab = 'food'; render(); };
@@ -1361,7 +1356,7 @@ function renderWorkout(el) {
   ${isBusy(w) && dk === 'lowerA' ? `<p class="small" style="margin:0 4px 12px;color:var(--warn)">+ رفرفة جانبي وفيس بول من LOWER B (أسبوع مزنوق)</p>` : ''}
   ${rd && rd.level !== 'green' ? `<div class="verdict ${rd.level === 'red' ? 'warn' : 'info'}" style="margin-bottom:14px"><h3>${READY_TXT[rd.level][0]}</h3><p>${READY_TXT[rd.level][1]} (${rd.why.join(' · ')}) – المجموعات تحت متظبطة.</p></div>` : ''}
   <button class="link small" id="busyBtn" style="margin:0 4px 12px">${isBusy(w) ? 'رجّع الأسبوع 4 أيام' : 'أسبوع مزنوق؟ خليه 3 أيام'}</button>
-  <button class="verdict info" id="warmBtn" style="display:block;width:100%;text-align:start;margin-bottom:14px"><h3>🔥 التسخين قبل التمرين · ${WARMUP[warmKind(dk)].time}</h3><p>${sess && sess.warm ? '✓ سخّنت' : 'خطوات بالترتيب + مجموعات تسخين قبل أول تمرين تقيل – عشان متتصابش.'}</p></button>
+  <button class="banner" id="warmBtn" style="margin-bottom:14px"><b>🔥 التسخين · ${WARMUP[warmKind(dk)].time}</b><span>${sess && sess.warm ? '✓ سخّنت' : 'قبل أول تمرين – عشان متتصابش'}</span></button>
   ${groups.map(g => `<div class="card">${g.length > 1 ? g.map((ex, i) => exHtml(ex, i + 1)).join('') : exHtml(g[0])}
      ${g.length > 1 ? `<div class="note"><span class="i">i</span><span class="lbl">ملاحظة</span><span>${esc(g[0].kind === 'warm' ? 'إحماء ورا بعض من غير راحة طويلة. ' : '')}${esc(g[0].note)}</span></div>` : `<div class="note"><span class="i">i</span><span class="lbl">ملاحظة</span><span>${esc(g[0].note)}</span></div>`}
    </div>`).join('')}
@@ -1774,8 +1769,7 @@ function renderFood(el) {
   <div class="quick" style="padding:0 0 12px">${week.map(d => `<button data-fd="${d}" style="${d === t ? 'background:var(--red);color:#fff;border-color:var(--red)' : ''};height:auto;padding:8px 12px;line-height:1.3"><span style="display:block;font-size:13px">${d === td ? 'النهارده' : d === addDays(td, -1) ? 'امبارح' : AR_DAYS[parseISO(d).getDay()]}</span><small style="font-size:11px;opacity:.8">${tag(d)}</small></button>`).join('')}</div>
   ${future ? `<p class="muted small" style="margin:0 4px 10px">ده أكل ${nice(t)} – هتعلّم عليه يومها.</p>` : ''}
   ${banner ? banner + '<div class="mt"></div>' : ''}
-  ${t === td ? shopCard() : ''}
-  <button class="btn ghost block mt sm" id="rcOpen">📖 وصفات على قد سعراتك – بشاميل، بيتزا، كشري…</button>
+  <div class="grid2 mt">${t === td ? shopCard() : ''}<button class="pill-btn" id="rcOpen"><b>📖 وصفات</b><small>على قد سعراتك</small></button></div>
   <div class="totals"><div class="tile"><small>السعرات</small><b class="num">${fmt(ek)} / ${fmt(kc)}</b><div class="bar ok"><i style="width:${Math.min(100, ek / kc * 100)}%"></i></div></div>
   <div class="tile"><small>البروتين (جم)</small><b class="num">${fmt(ep)} / ${fmt(pr)}</b><div class="bar ok"><i style="width:${Math.min(100, ep / pr * 100)}%"></i></div></div></div>
   ${ms.map(m => `<div class="card mt">
@@ -1833,6 +1827,7 @@ function renderMenu(el) {
     ['save', 'المزامنة مع Google Drive', cloudSheet, cloudInfo.linked ? '✓ مربوط' : 'مش مربوط'],
     ['bell', 'الإشعارات', notifSheet, S.settings.notif ? 'شغالة' : 'مقفولة'],
     ['shield', 'الكابتن (المراجعة اليومية)', () => (ghOn() && (S.coach.msgs || []).length ? coachMsgsSheet() : ghSheet()), ghOn() ? (S.settings.ghLast ? '✓ شغالة' : 'مستنية') : 'مش متفعّلة'],
+    ['report', 'قول للكابتن', sayCoachSheet, ''],
     ['heart', 'مكان الجيم', gymSheet, S.settings.gym ? '✓' : ''],
     ['shield', 'قواعد الكابتن والمصادر', rulesSheet, ''],
     ['report', 'أدوات تانية', moreSheet, '']
