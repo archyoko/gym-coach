@@ -75,7 +75,7 @@ public class ZeppBridge extends Plugin {
         r.put("status", p.getString("gainStatus", ""));
         r.put("days", p.getInt("gainDays", 0));
         r.put("cursor", p.getString("gainCursor", ""));
-        r.put("raw", p.getString("gainRaw", ""));
+        r.put("raw", p.getString("gainWhere", "") + "\n" + p.getString("gainRaw", ""));
         r.put("installed", getContext().getPackageManager().getLaunchIntentForPackage(ZeppReaderService.GAIN) != null);
         call.resolve(r);
     }

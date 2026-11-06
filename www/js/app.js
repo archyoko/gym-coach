@@ -405,9 +405,10 @@ async function gainSheet() {
     <div class="note mt"><span class="i">3</span><span>هيرجعك هنا لما يخلص. اضغط <b>استورد</b>.</span></div>
     <label class="field"><span>ارجع لحد تاريخ (اختياري)</span><input id="gE" class="inp num" type="date" value=""></label>
     <button class="btn red block mt" id="gGo">ابدأ</button>
-    ${dates.length ? `<div class="section-t">اللي اتقرا ${st ? '· ' + st : ''}</div>
+    ${st ? `<p class="small mt" style="margin-bottom:0"><b>الحالة:</b> ${st}${g.cursor ? ` · آخر يوم: ${g.cursor}` : ''}</p>` : ''}
+    ${dates.length ? `<div class="section-t">اللي اتقرا</div>
       <p style="margin:0;line-height:1.8"><b class="num">${dates.length}</b> يوم · <b class="num">${nSets}</b> مجموعة · من ${dates[0]} لـ ${dates[dates.length - 1]}<br>${mapped.length} تمرين متربط بالبرنامج · ${names.length - mapped.length} تمرين هيتحفظ في سجل لوحده</p>
-      <button class="btn red block mt" id="gImp">استورد ${nSets} مجموعة</button>` : (st ? `<p class="muted small mt">الحالة: ${st}</p>` : '')}
+      <button class="btn red block mt" id="gImp">استورد ${nSets} مجموعة</button>` : ''}
     ${g.raw ? '<button class="btn ghost block mt sm" id="gRaw">انسخ اللي اتقرا من الشاشة (لو فيه مشكلة ابعتهولي)</button>' : ''}
     ${dates.length ? '<button class="btn ghost block mt sm" id="gReset">امسح القراية وابدأ من الأول</button>' : ''}`, p => {
     $('#gGo', p).onclick = async () => { if (!zeppState.enabled) { closeSheet(); zeppSetupSheet(); return; } try { await Zepp.startGain({ earliest: $('#gE', p).value || '' }); } catch (e) { toast(e.message || 'مقدرتش أفتحه'); } };

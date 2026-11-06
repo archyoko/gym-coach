@@ -382,6 +382,7 @@ public class ZeppReaderService extends AccessibilityService {
 
     private void gainStop(String status) {
         gRunning = false;
+        prefs().edit().putString("gainWhere", "phase=" + gPhase + " cursor=" + gCursor + " tries=" + gTries + " arrowLeft=" + gArrowLeft).apply();
         handler.removeCallbacks(gainStep);
         SharedPreferences.Editor ed = prefs().edit();
         if (gData != null) ed.putString("gain", gData.toString());
@@ -422,8 +423,22 @@ public class ZeppReaderService extends AccessibilityService {
         return dispatchGesture(g, null, null);
     }
 
-    /** أكبر عنصر بيسكرول رأسي (القايمة) */
-    private AccessibilityNodeInfo mainScroll(AccessibilityNodeInfo root) { return findScrollable(root); }
+    /** القايمة: أكبر عنصر بيسكرول **رأسي** تحت شريط الأيام (مش الشريط نفسه) */
+    private AccessibilityNodeInfo mainScroll(AccessibilityNodeInfo root, int belowY) {
+        AccessibilityNodeInfo best = null; int bestArea = 0;
+        List<AccessibilityNodeInfo> st = new ArrayList<>(); st.add(root);
+        while (!st.isEmpty()) {
+            AccessibilityNodeInfo x = st.remove(st.size() - 1); if (x == null) continue;
+            if (x.isScrollable()) {
+                Rect r = new Rect(); x.getBoundsInScreen(r);
+                boolean vertical = r.height() >= r.width() * 0.8 || r.bottom > belowY + r.height() / 2;
+                boolean isStrip = r.width() > r.height() * 2;
+                if (vertical && !isStrip) { int a = r.width() * r.height(); if (a > bestArea) { bestArea = a; best = x; } }
+            }
+            for (int i = 0; i < x.getChildCount(); i++) st.add(x.getChild(i));
+        }
+        return best;
+    }
 
     /** شريط الأيام: عنصر بيسكرول أعرض من ما هو طويل */
     private AccessibilityNodeInfo stripScroll(AccessibilityNodeInfo root, int yTop, int yBottom) {
@@ -476,7 +491,7 @@ public class ZeppReaderService extends AccessibilityService {
             // 2) اقرا المجموعات الظاهرة
             readSets(items, headers, listTop);
             // 3) انزل لتحت
-            AccessibilityNodeInfo sc = mainScroll(root);
+            AccessibilityNodeInfo sc = headers.isEmpty() ? null : mainScroll(root, stripBottom);
             if (gScrolls < 12 && sc != null && sc.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)) { gScrolls++; handler.postDelayed(gainStep, 900); return; }
             // اليوم خلص
             gDays++;
