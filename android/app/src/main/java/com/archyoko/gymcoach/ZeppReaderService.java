@@ -504,18 +504,22 @@ public class ZeppReaderService extends AccessibilityService {
             ed.putString("gain", gData.toString()).putInt("gainDays", gDays).putString("gainCursor", gCursor).apply();
             String earliest = prefs().getString("gainEarliest", "");
             if ((gGotAny && gEmpty >= 28) || (!gGotAny && gEmpty >= 45) || (!earliest.isEmpty() && gCursor.compareTo(earliest) <= 0)) { gainStop("done"); return; }
-            for (int i = 0; i < gScrolls + 3; i++) { if (sc != null) sc.performAction(AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD); }
-            gScrolls = 0; gExpanded.clear(); gPhase = 1; gTries = 0; gMonthTries = 0;
+            gScrolls = 0; gUp = 0; gExpanded.clear(); gPhase = 1; gTries = 0; gMonthTries = 0;
             handler.postDelayed(gainStep, 900); return;
         }
 
         if (gPhase == 1) {
             // لو الصفحة نازلة لتحت (الشهر والأيام مش ظاهرين) اطلع فوق الأول
             if (monthItem == null) {
+                if (++gUp > 14) { gainStop("top"); return; }
+                // مرة سكرول عادي ومرة سحبة بالصباع لتحت (بعض التطبيقات مبتستجيبش للأولى)
                 AccessibilityNodeInfo up = mainScroll(root, 0);
                 if (up == null) up = findScrollable(root);
-                if (up != null && gTries < 12) { for (int i = 0; i < 6; i++) up.performAction(AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD); gTries++; handler.postDelayed(gainStep, 900); return; }
+                if (gUp % 2 == 1 && up != null) up.performAction(AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD);
+                else swipeDown();
+                handler.postDelayed(gainStep, 800); return;
             }
+            gUp = 0;
             // اليوم اللي قبله
             String target = shift(gCursor, -1);
             int tDay = dayNum(target);
@@ -542,6 +546,15 @@ public class ZeppReaderService extends AccessibilityService {
         }
     }
 
+    private int gUp = 0;
+    private void swipeDown() {
+        if (Build.VERSION.SDK_INT < 24) return;
+        int w = getResources().getDisplayMetrics().widthPixels, h = getResources().getDisplayMetrics().heightPixels;
+        android.graphics.Path path = new android.graphics.Path();
+        path.moveTo(w * 0.5f, h * 0.35f); path.lineTo(w * 0.5f, h * 0.92f);
+        dispatchGesture(new android.accessibilityservice.GestureDescription.Builder()
+                .addStroke(new android.accessibilityservice.GestureDescription.StrokeDescription(path, 0, 250)).build(), null, null);
+    }
     private String gWeekCheck = null;
     private String gSig = "";
     private boolean pressLater = false;
