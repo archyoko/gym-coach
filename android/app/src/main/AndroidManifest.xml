@@ -48,6 +48,7 @@
 
     <queries>
         <package android:name="com.huami.watch.pop" />
+        <package android:name="com.chipsea.btcontrol.en" />
     </queries>
 
     <!-- Permissions -->

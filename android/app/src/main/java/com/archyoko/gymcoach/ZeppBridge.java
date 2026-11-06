@@ -35,6 +35,9 @@ public class ZeppBridge extends Plugin {
         r.put("enabled", enabled());
         r.put("installed", installed());
         r.put("auto", p.getBoolean("auto", true));
+        r.put("okok", p.getString("okok", "{}"));
+        r.put("okokRaw", p.getString("okokRaw", ""));
+        r.put("okokRead", p.getLong("okokRead", 0));
         call.resolve(r);
     }
 

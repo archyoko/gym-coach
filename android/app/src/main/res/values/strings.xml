@@ -5,5 +5,5 @@
     <string name="package_name">com.archyoko.gymcoach</string>
     <string name="custom_url_scheme">com.archyoko.gymcoach</string>
     <string name="zepp_reader_label">كوتش الجيم – قراءة الساعة</string>
-    <string name="zepp_reader_desc">بيقرا الخطوات والسعرات والنوم من شاشة "صحة" في تطبيق Zepp Active بس، عشان تتسجل في كوتش الجيم أوتوماتيك. مبيقراش أي تطبيق تاني ومبيبعتش أي بيانات برة الموبايل.</string>
+    <string name="zepp_reader_desc">بيقرا الخطوات والسعرات والنوم من Zepp Active، والوزن وتحليل الجسم من OKOK International – التطبيقين دول بس – عشان يتسجلوا في كوتش الجيم أوتوماتيك. مبيقراش أي تطبيق تاني ومبيبعتش أي بيانات برة الموبايل.</string>
 </resources>

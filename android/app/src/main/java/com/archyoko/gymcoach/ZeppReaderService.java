@@ -30,10 +30,12 @@ import java.util.regex.Pattern;
  */
 public class ZeppReaderService extends AccessibilityService {
     static final String ZEPP = "com.huami.watch.pop";
+    static final String OKOK = "com.chipsea.btcontrol.en";
     static final String PREFS = "zepp_reader";
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final Runnable captureTask = this::capture;
+    private final Runnable okokTask = this::captureOkok;
     private int scrolls = 0;
 
     static class Item {
@@ -43,7 +45,9 @@ public class ZeppReaderService extends AccessibilityService {
 
     @Override
     public void onAccessibilityEvent(AccessibilityEvent e) {
-        if (e == null || e.getPackageName() == null || !ZEPP.contentEquals(e.getPackageName())) return;
+        if (e == null || e.getPackageName() == null) return;
+        if (OKOK.contentEquals(e.getPackageName())) { handler.removeCallbacks(okokTask); handler.postDelayed(okokTask, 900); return; }
+        if (!ZEPP.contentEquals(e.getPackageName())) return;
         handler.removeCallbacks(captureTask);
         handler.postDelayed(captureTask, 800);
     }
@@ -240,6 +244,82 @@ public class ZeppReaderService extends AccessibilityService {
         Intent i = new Intent(this, MainActivity.class);
         i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT | Intent.FLAG_ACTIVITY_SINGLE_TOP);
         try { startActivity(i); } catch (Exception ignored) { }
+    }
+
+    /* ---------- ميزان OKOK: الوزن وتحليل الجسم ---------- */
+    private static final String[][] OK_RULES = {
+        // key, لازم يحتوي, ممنوع يحتوي
+        {"weight", "سجل الوزن", "المخطط"}, {"weight", "Weight", "Fat|Muscle|Water|Bone"},
+        {"bmi", "BMI", ""},
+        {"fatKg", "وزن الدهون", ""}, {"visceral", "الحشوية", ""}, {"visceral", "Visceral", ""},
+        {"fat", "الدهون", "وزن|الحشوية"}, {"fat", "Body Fat", "Mass|kg"},
+        {"skmKg", "وزن العضلات العظمية", ""}, {"skm", "العضلات العظمية", "وزن"}, {"skm", "Skeletal", "kg|Mass"},
+        {"muscleKg", "وزن العضلات", "العظمية"}, {"muscle", "نسبة العضلات", "العظمية"}, {"muscle", "Muscle Rate", ""},
+        {"waterKg", "وزن الماء", ""}, {"water", "المياه", "وزن"}, {"water", "Body Water", "kg"},
+        {"bone", "العظام", ""}, {"bone", "Bone", ""},
+        {"bmr", "حرق السعرات", ""}, {"bmr", "BMR", ""},
+        {"protein", "البروتين", ""}, {"protein", "Protein", ""},
+        {"lean", "كتلة الجسم", ""}, {"lean", "Lean", ""}, {"metaAge", "العمر الايضي", ""}, {"metaAge", "العمر الأيضي", ""}
+    };
+
+    private void captureOkok() {
+        AccessibilityNodeInfo root = getRootInActiveWindow();
+        if (root == null || root.getPackageName() == null || !OKOK.contentEquals(root.getPackageName())) return;
+        List<Item> items = new ArrayList<>();
+        collect(root, items, 0);
+        StringBuilder joined = new StringBuilder();
+        for (Item it : items) joined.append(it.text).append(' ');
+        String all = joined.toString();
+        // تاريخ القياس اللي على الشاشة – من غيره مش بنسجّل (عشان قراءة قديمة متتحسبش على النهارده)
+        Matcher md = Pattern.compile("(20\\d{2})[/-](\\d{1,2})[/-](\\d{1,2})\\s+(\\d{1,2}):(\\d{2})").matcher(all);
+        if (!md.find()) return;
+        String date = String.format(Locale.US, "%s-%02d-%02d", md.group(1), Integer.parseInt(md.group(2)), Integer.parseInt(md.group(3)));
+        String time = String.format(Locale.US, "%02d:%s", Integer.parseInt(md.group(4)), md.group(5));
+        try {
+            JSONObject rec = new JSONObject();
+            for (Item lab : items) {
+                String t = lab.text;
+                if (t.length() > 40 || NUM.matcher(t).matches()) continue;
+                for (String[] r : OK_RULES) {
+                    if (rec.has(r[0]) || !t.contains(r[1])) continue;
+                    if (!r[2].isEmpty() && Pattern.compile(r[2]).matcher(t).find()) continue;
+                    Double v = rowValue(items, lab);
+                    if (v != null && !(r[0].equals("weight") && (v < 30 || v > 250))) rec.put(r[0], v);
+                    break;
+                }
+            }
+            // الشاشة الرئيسية: الرقم الكبير جنب "كجم"
+            if (!rec.has("weight")) {
+                for (Item lab : items) {
+                    if (!lab.text.equals("كجم") && !lab.text.equalsIgnoreCase("kg")) continue;
+                    Double v = rowValue(items, lab);
+                    if (v != null && v > 30 && v < 250) { rec.put("weight", v); break; }
+                }
+            }
+            if (rec.length() == 0) return;
+            rec.put("time", time);
+            SharedPreferences p = prefs();
+            JSONObject data = new JSONObject(p.getString("okok", "{}"));
+            JSONObject old = data.optJSONObject(date);
+            if (old != null) { java.util.Iterator<String> k = rec.keys(); while (k.hasNext()) { String key = k.next(); old.put(key, rec.get(key)); } rec = old; }
+            data.put(date, rec);
+            StringBuilder raw = new StringBuilder();
+            for (int i = 0; i < Math.min(items.size(), 150); i++) raw.append(items.get(i).text).append(" | ");
+            p.edit().putString("okok", data.toString()).putString("okokRaw", raw.toString()).putLong("okokRead", System.currentTimeMillis()).apply();
+        } catch (Exception ignored) { }
+    }
+
+    /** الرقم اللي في نفس السطر مع الكلمة */
+    private static Double rowValue(List<Item> items, Item lab) {
+        int cy = lab.r.centerY(); Item best = null; int bestD = Integer.MAX_VALUE;
+        for (Item it : items) {
+            if (it == lab || !NUM.matcher(it.text).matches()) continue;
+            int d = Math.abs(it.r.centerY() - cy);
+            int tol = Math.max(lab.r.height(), it.r.height());
+            if (d <= tol && d < bestD) { best = it; bestD = d; }
+        }
+        if (best == null) return null;
+        try { return Double.parseDouble(best.text.replace(",", "")); } catch (Exception e) { return null; }
     }
 
     private AccessibilityNodeInfo findScrollable(AccessibilityNodeInfo n) {

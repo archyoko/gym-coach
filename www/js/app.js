@@ -57,18 +57,24 @@ function load() {
 }
 function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { toast('مقدرتش أحفظ – المساحة مليانة؟'); } }
 S = load();
+// قراءة الميزان يوم 31/10 من صور OKOK
+if (!S.body['2026-10-31']) { S.body['2026-10-31'] = { weight: 88.65, bmi: 30.7, fat: 29.5, fatKg: 26.2, skm: 36.5, skmKg: 32.4, muscle: 67.6, muscleKg: 60.0, water: 51.7, waterKg: 45.8, visceral: 16.5, bone: 2.47, bmr: 1812, protein: 16.0, lean: 62.49, metaAge: 43, src: 'okok' }; }
 
 const day = d => (S.days[d] = S.days[d] || {});
 
 /* القيم الفعلية لليوم: اليدوي يكسب في الوزن، والساعة تكسب في الخطوات والحرق */
-function latestWeight(d) { for (let i = 0; i < 30; i++) { const x = S.days[addDays(d, -i)] || {}, y = S.health[addDays(d, -i)] || {}; const w = x.w ?? y.weight; if (w) return w; } return S.settings.startWeight; }
-function bmr(d) { const s = S.settings; return Math.round(10 * latestWeight(d) + 6.25 * s.height - 5 * s.age + 5); }
+function latestWeight(d) { for (let i = 0; i < 30; i++) { const x = S.days[addDays(d, -i)] || {}, y = S.health[addDays(d, -i)] || {}; const w = x.w ?? y.oweight ?? y.weight; if (w) return w; } return S.settings.startWeight; }
+/* حرق الراحة: من الميزان لو موجود (آخر 30 يوم)، وإلا معادلة Mifflin */
+function bmr(d) {
+  for (let i = 0; i < 30; i++) { const b = S.body[addDays(d, -i)]; if (b && b.bmr) return Math.round(b.bmr); }
+  const s = S.settings; return Math.round(10 * latestWeight(d) + 6.25 * s.height - 5 * s.age + 5);
+}
 /* الأولوية: اليدوي ← ساعة Zepp Active ← Health Connect (الموبايل/Fit) */
 function eff(d) {
   const m = S.days[d] || {}, h = S.health[d] || {};
   const active = m.active ?? h.zactive ?? h.active ?? null;
   return {
-    w: m.w ?? h.weight ?? null,
+    w: m.w ?? h.oweight ?? h.weight ?? null,
     steps: m.steps ?? h.zsteps ?? h.steps ?? null,
     active,
     kcal: m.kcal ?? (active != null ? bmr(d) + active : h.kcal) ?? null,
@@ -221,7 +227,15 @@ async function zeppPull() {
   if (!Zepp) return false;
   try {
     const r = await Zepp.getData();
-    zeppState = { enabled: !!r.enabled, installed: !!r.installed, lastRead: r.lastRead || 0, raw: r.raw || '', auto: r.auto !== false };
+    zeppState = { enabled: !!r.enabled, installed: !!r.installed, lastRead: r.lastRead || 0, raw: r.raw || '', auto: r.auto !== false, okokRead: r.okokRead || 0, okokRaw: r.okokRaw || '' };
+    const ok = JSON.parse(r.okok || '{}');
+    for (const [d, v] of Object.entries(ok)) {
+      if (v.weight) (S.health[d] = S.health[d] || {}).oweight = v.weight;
+      const b = (S.body[d] = S.body[d] || {});
+      for (const k of ['fat', 'fatKg', 'skm', 'skmKg', 'muscle', 'muscleKg', 'water', 'waterKg', 'visceral', 'bone', 'bmr', 'protein', 'lean', 'bmi', 'metaAge']) if (v[k] != null) b[k] = v[k];
+      if (v.weight) b.weight = v.weight;
+      b.src = 'okok';
+    }
     const data = JSON.parse(r.data || '{}');
     for (const [d, v] of Object.entries(data)) {
       if (d === 'workouts') continue;
@@ -244,7 +258,7 @@ async function zeppFetch() {
 }
 function zeppSetupSheet() {
   openSheet(sheetHead('قراءة الساعة أوتوماتيك', 'إعداد مرة واحدة – دقيقة') + `
-    <p style="line-height:1.8">كوتش الجيم بيقرا الخطوات والسعرات والنوم من شاشة "صحة" في Zepp Active كل ما يتفتح. الخدمة مقفولة على Zepp Active بس.</p>
+    <p style="line-height:1.8">كوتش الجيم بيقرا الخطوات والسعرات والنوم من Zepp Active، والوزن وتحليل الجسم من OKOK وانت بتتوزن (افتح شاشة <b>التفاصيل</b> بعد الوزن). الخدمة مقفولة على التطبيقين دول بس.</p>
     <div class="note"><span class="i">1</span><span>اضغط الزرار ده ← هتفتح صفحة معلومات التطبيق ← اضغط <b>⋮</b> فوق ← <b>السماح بالإعدادات المقيدة</b> (Allow restricted settings). لو مش ظاهرة، كمّل للخطوة 2 الأول.</span></div>
     <button class="btn ghost block mt sm" id="z1">افتح معلومات التطبيق</button>
     <div class="note mt"><span class="i">2</span><span>اضغط الزرار ده ← <b>التطبيقات المثبتة</b> (Downloaded apps) ← <b>كوتش الجيم – قراءة الساعة</b> ← شغّلها ← وافق.</span></div>
@@ -255,11 +269,12 @@ function zeppSetupSheet() {
     <p style="line-height:1.8;margin:0">أول ما تفتح قفل الموبايل <b>الصبح</b> (من 5 لـ 12) بيجيب نوم الليلة، وأول ما تفتحه <b>بالليل</b> (بعد 9) بيجيب خطوات وسعرات اليوم كاملة. Zepp Active هيظهر 3–5 ثواني ويقفل لوحده ويرجعك للي كنت فيه.</p>
     <button class="btn ${zeppState.auto ? 'ghost' : 'red'} block mt sm" id="z5">${zeppState.auto ? '✓ الأوتوماتيك شغال – اضغط تقفله' : 'شغّل الأوتوماتيك'}</button>
     <p class="muted small mt">حالة الخدمة: ${zeppState.enabled ? '✓ شغالة' : '✗ مش شغالة لسه'}${zeppState.lastRead ? ` · آخر قراءة ${new Date(zeppState.lastRead).toLocaleTimeString('ar-EG', { hour: 'numeric', minute: '2-digit' })}` : ''}</p>
-    ${zeppState.raw ? '<button class="btn ghost block sm" id="z4">انسخ اللي اتقرا (لو الأرقام غلط ابعتهولي)</button>' : ''}`, p => {
+    ${zeppState.okokRead ? `<p class="muted small">آخر قراءة للميزان: ${new Date(zeppState.okokRead).toLocaleString('ar-EG', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}</p>` : ''}
+    ${zeppState.raw || zeppState.okokRaw ? '<button class="btn ghost block sm" id="z4">انسخ اللي اتقرا (لو الأرقام غلط ابعتهولي)</button>' : ''}`, p => {
     $('#z1', p).onclick = () => Zepp && Zepp.openAppInfo();
     $('#z2', p).onclick = () => Zepp && Zepp.openSettings();
     $('#z3', p).onclick = async () => { await zeppPull(); if (!zeppState.enabled) { toast('الخدمة لسه مش شغالة – اعمل خطوة 2'); return; } closeSheet(); zeppFetch(); };
-    const z4 = $('#z4', p); if (z4) z4.onclick = () => copyText(zeppState.raw);
+    const z4 = $('#z4', p); if (z4) z4.onclick = () => copyText('ZEPP:\n' + zeppState.raw + '\n\nOKOK:\n' + zeppState.okokRaw);
     $('#z5', p).onclick = async () => { try { await Zepp.setAuto({ enabled: !zeppState.auto }); } catch (e) { } await zeppPull(); closeSheet(); zeppSetupSheet(); };
   });
 }
@@ -727,7 +742,9 @@ function renderProgress(el) {
   <div class="section-t">القوة (أحسن مجموعة محسوبة)</div>
   <div class="card pad scroll-x">${str.length ? `<table class="t"><thead><tr><th>التمرين</th><th>أحسن مجموعة</th><th>التغيير</th></tr></thead><tbody>${str.map(s => { const ch = s.first ? (s.last - s.first) / s.first * 100 : 0; return `<tr><td>${esc(s.name)}</td><td><span class="num">${fmt(s.best.w, 2)}×${s.best.r}</span></td><td>${s.n > 1 ? `<span class="${ch >= 0 ? 'up' : 'down'}">${ch >= 0 ? '+' : ''}${fmt(ch, 0)}%</span>` : '<span class="muted small">مرة واحدة</span>'}</td></tr>`; }).join('')}</tbody></table>` : '<div class="empty">ابدأ تمرين وسجّل المجموعات.</div>'}</div>
   <div class="section-t">تحليل الميزان والمقاسات</div>
-  <div class="card pad">${bodyDates.length ? `<table class="t"><thead><tr><th>التاريخ</th><th>دهون</th><th>عضل</th><th>مية</th><th>الوسط</th></tr></thead><tbody>${bodyDates.slice(0, 8).map(d => { const b = S.body[d]; return `<tr><td>${short(d)}</td><td>${b.fat ?? '—'}%</td><td>${b.muscle ?? '—'}${b.muscle ? '%' : ''}</td><td>${b.water ?? '—'}${b.water ? '%' : ''}</td><td>${b.waist ?? '—'}${b.waist ? ' سم' : ''}</td></tr>`; }).join('')}</tbody></table>` : '<p class="muted small" style="margin:0">مرة في الأسبوع: انقل أرقام OKOK (دهون، عضل، مية) ومقاس الوسط عند السرّة.</p>'}
+  <div class="card pad">${bodyDates.length ? `<table class="t"><thead><tr><th>التاريخ</th><th>الوزن</th><th>دهون %</th><th>عضل هيكلي</th><th>حشوية</th><th>الوسط</th></tr></thead><tbody>${bodyDates.slice(0, 8).map(d => { const b = S.body[d]; return `<tr><td>${short(d)}</td><td>${b.weight ?? '—'}</td><td>${b.fat ?? '—'}</td><td>${b.skmKg ? b.skmKg + ' كجم' : b.skm ? b.skm + '%' : b.muscle ?? '—'}</td><td>${b.visceral ?? '—'}</td><td>${b.waist ?? '—'}</td></tr>`; }).join('')}</tbody></table>
+    ${(() => { const ds = bodyDates.filter(d => S.body[d].fatKg && S.body[d].skmKg); if (ds.length < 2) return ''; const a = S.body[ds[ds.length - 1]], b = S.body[ds[0]]; const df = r1(b.fatKg - a.fatKg), dm = r1(b.skmKg - a.skmKg); return `<p class="small" style="margin:10px 0 0;line-height:1.7">من ${short(ds[ds.length - 1])}: دهون <b class="${df <= 0 ? 'up' : 'down'}">${df > 0 ? '+' : ''}${df} كجم</b> · عضل هيكلي <b class="${dm >= 0 ? 'up' : 'down'}">${dm > 0 ? '+' : ''}${dm} كجم</b></p>`; })()}
+    <p class="muted small" style="margin:8px 0 0">أرقام الميزان بتتقرا لوحدها من OKOK. الوسط اكتبه انت. ميزان البصمة بيتأثر بالمية – قارن نفس الميعاد كل أسبوع.</p>` : '<p class="muted small" style="margin:0">مرة في الأسبوع: انقل أرقام OKOK (دهون، عضل، مية) ومقاس الوسط عند السرّة.</p>'}
     <button class="btn ghost block mt sm" id="addBody">${ICON.plus.replace('<svg', '<svg style="stroke:var(--ink)"')} أضف قياس</button></div>
   <button class="btn red block mt" id="report">تقرير الأسبوع للكابتن</button>`;
   $('#addBody').onclick = bodySheet;
@@ -744,7 +761,7 @@ function bodySheet() {
       const n = id => { const v = parseFloat($(id, p).value.replace(',', '.')); return isNaN(v) ? undefined : v; };
       const rec = { fat: n('#bF'), muscle: n('#bM'), water: n('#bW'), waist: n('#bC') };
       if (Object.values(rec).every(v => v === undefined)) { toast('اكتب رقم واحد على الأقل'); return; }
-      S.body[d] = rec; save(); closeSheet(); render(); toast('اتسجّل ✓');
+      const cur = S.body[d] || {}; for (const [k, v] of Object.entries(rec)) if (v !== undefined) cur[k] = v; S.body[d] = cur; save(); closeSheet(); render(); toast('اتسجّل ✓');
     };
   });
 }
@@ -757,7 +774,7 @@ function weeklyReport() {
   lines.push(`- متوسط الوزن: ${now ? fmt(now.avg, 2) : '—'} (الأسبوع اللي فات ${prev ? fmt(prev.avg, 2) : '—'})`);
   lines.push(`- متوسط الخطوات: ${fmt(avgOf('steps', t))} (الهدف ${set.steps}) · متوسط الحرق: ${fmt(avgOf('kcal', t))} · متوسط النوم: ${avgOf('sleep', t) ? (avgOf('sleep', t) / 60).toFixed(1) + ' ساعة' : '—'}`);
   lines.push(...daily.map(x => '  - ' + x));
-  const bd = Object.keys(S.body).sort().pop(); if (bd) { const b = S.body[bd]; lines.push(`- آخر قياس (${bd}): دهون ${b.fat ?? '—'}% · عضل ${b.muscle ?? '—'}% · مية ${b.water ?? '—'}% · وسط ${b.waist ?? '—'} سم`); }
+  const bd = Object.keys(S.body).sort().pop(); if (bd) { const b = S.body[bd]; lines.push(`- آخر قياس (${bd}): وزن ${b.weight ?? '—'} · دهون ${b.fat ?? '—'}% (${b.fatKg ?? '—'} كجم) · عضل هيكلي ${b.skmKg ?? '—'} كجم (${b.skm ?? '—'}%) · مية ${b.water ?? '—'}% · حشوية ${b.visceral ?? '—'} · BMR ${b.bmr ?? '—'} · وسط ${b.waist ?? '—'} سم`); }
   lines.push('', '## التمرين');
   for (const d of DAYS) {
     const s = S.logs[sessKey(wk, d.key)];
