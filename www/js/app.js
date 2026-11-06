@@ -430,7 +430,7 @@ function render() {
   const el = $('#screen'); el.classList.remove('has-cta');
   ({ home: renderHome, workout: renderWorkout, progress: renderProgress, food: renderFood, menu: renderMenu })[tab](el);
 }
-document.querySelectorAll('#tabbar button').forEach(b => b.onclick = () => { tab = b.dataset.tab; window.scrollTo(0, 0); render(); });
+document.querySelectorAll('#tabbar button').forEach(b => b.onclick = () => { tab = b.dataset.tab; if (tab === 'food') view.food = null; window.scrollTo(0, 0); render(); });
 
 function renderSyncLine() {
   const zl = $('#zeppline');
@@ -930,28 +930,36 @@ function weeklyReport() {
 
 /* ================= الأكل ================= */
 function renderFood(el) {
-  const t = today(), eaten = (S.days[t] || {}).meals || {}, ms = mealsFor(t), dt = dayType(t);
+  const td = today();
+  if (!view.food) view.food = td;
+  const t = view.food, eaten = (S.days[t] || {}).meals || {}, ms = mealsFor(t), dt = dayType(t), future = t > td;
+  // امبارح + النهارده + 6 أيام جايين
+  const week = Array.from({ length: 8 }, (_, i) => addDays(td, i - 1));
+  const tag = d => isMomFri(d) ? 'ماما' : isLecture(d) ? 'محاضرة' : (DAYS.find(x => x.dow === parseISO(d).getDay()) ? 'تمرين' : 'راحة');
   const kc = ms.reduce((a, m) => a + m.kcal, 0), pr = ms.reduce((a, m) => a + m.p, 0);
   const ek = ms.reduce((a, m) => a + (eaten[m.id] ? m.kcal : 0), 0), ep = ms.reduce((a, m) => a + (eaten[m.id] ? m.p : 0), 0);
   const banner = dt === 'mom' ? `<div class="verdict ok"><h3>جمعة ماما 😄</h3><p>ميزانية النهارده ~${fmt(kc)} سعر. استمتع: البروتين الأول، طبق واحد مليان، حتة حلو واحدة. ومتصومش بكرة.</p></div>`
     : dt === 'lecture' ? `<div class="verdict info"><h3>يوم محاضرة 🎓</h3><p>العشا برة أو في البريك. اختار تحت اللي أكلته عشان الحسبة تبقى صح.</p></div>` : '';
   const itemRow = (it, mid) => `<div class="item"><span class="food-ic">${esc(it.name.trim()[0])}</span><div><b>${esc(it.name)}</b><small><span class="num">${it.g}</span> جم · <span class="num">${it.kcal}</span> سعر · <span class="num">${it.p}</span> جم بروتين</small>${it.swapped ? `<div class="swapped">بدل ${esc(it.base)}</div>` : ''}${it.adj ? `<div class="swapped">${it.adj > 0 ? '+' : ''}${it.adj} جم من تعديل الكابتن</div>` : ''}</div>${(DIET.meals.find(x => x.id === mid).items.find(x => x.id === it.id) || {}).alts?.length ? `<button class="sq red" data-fs="${it.id}" aria-label="بدّل">${ICON.swap}</button>` : ''}</div>`;
   el.innerHTML = `<div class="topbar"><h1>النظام الغذائي</h1><button class="iconbtn" id="dInfo" aria-label="معلومات">${ICON.info}</button></div>
+  <div class="quick" style="padding:0 0 12px">${week.map(d => `<button data-fd="${d}" style="${d === t ? 'background:var(--red);color:#fff;border-color:var(--red)' : ''};height:auto;padding:8px 12px;line-height:1.3"><span style="display:block;font-size:13px">${d === td ? 'النهارده' : d === addDays(td, -1) ? 'امبارح' : AR_DAYS[parseISO(d).getDay()]}</span><small style="font-size:11px;opacity:.8">${tag(d)}</small></button>`).join('')}</div>
+  ${future ? `<p class="muted small" style="margin:0 4px 10px">ده أكل ${nice(t)} – هتعلّم عليه يومها.</p>` : ''}
   ${banner ? banner + '<div class="mt"></div>' : ''}
   <div class="totals"><div class="tile"><small>السعرات</small><b class="num">${fmt(ek)} / ${fmt(kc)}</b><div class="bar ok"><i style="width:${Math.min(100, ek / kc * 100)}%"></i></div></div>
   <div class="tile"><small>البروتين (جم)</small><b class="num">${fmt(ep)} / ${fmt(pr)}</b><div class="bar ok"><i style="width:${Math.min(100, ep / pr * 100)}%"></i></div></div></div>
   ${ms.map(m => `<div class="card mt">
-    <div class="meal-h"><div><h3>${m.title}</h3><small>${m.time} · ${m.where} · <span class="num">${m.kcal}</span> سعر · <span class="num">${m.p}</span> جم بروتين</small></div><button class="eat ${eaten[m.id] ? 'on' : ''}" data-eat="${m.id}" aria-label="أكلتها">${ICON.check}</button></div>
+    <div class="meal-h"><div><h3>${m.title}</h3><small>${m.time} · ${m.where} · <span class="num">${m.kcal}</span> سعر · <span class="num">${m.p}</span> جم بروتين</small></div>${future ? '' : `<button class="eat ${eaten[m.id] ? 'on' : ''}" data-eat="${m.id}" aria-label="أكلتها">${ICON.check}</button>`}</div>
     ${m.special ? m.options.map(o => `<button class="item" style="width:100%;text-align:start" data-opt="${o.id}"><span class="food-ic" style="${m.pick === o.id ? 'background:var(--red);color:#fff' : ''}">${m.pick === o.id ? '✓' : ''}</span><div><b>${esc(o.name)}</b><small>${esc(o.desc)}</small><br><small><span class="num">${o.id === 'box' ? m.boxItems.reduce((a, x) => a + x.kcal, 0) : o.kcal}</span> سعر · <span class="num">${o.p}</span> جم بروتين</small></div></button>`).join('')
       : m.items.map(it => itemRow(it, m.id)).join('')}
     <div class="note"><span class="i">i</span><span class="lbl">ملاحظة</span><span>${esc(m.note)}</span></div></div>`).join('')}
   ${(() => { const ex = (S.days[t] || {}).extras || []; const tot = extraOf(t); return `<div class="card mt"><div class="meal-h"><div><h3>أكل زيادة</h3><small>حلو، مشروب، سناك، عزومة · ${tot ? `<span class="num">${tot}</span> سعر النهارده` : 'مفيش لسه'}</small></div><button class="sq red" id="exAdd" aria-label="ضيف">${ICON.plus}</button></div>
     ${ex.map((e, i) => `<div class="item"><span class="food-ic">${esc(e.name.trim()[0])}</span><div><b>${esc(e.name)}</b><small><span class="num">${e.kcal}</span> سعر</small></div><button class="mini del" data-exdel="${i}" aria-label="مسح">${ICON.trash}</button></div>`).join('')}
     ${!ex.length ? '<p class="muted small" style="margin:0;padding:12px 16px">اضغط + واختار اللي أكلته من القايمة – السعرات محسوبة جاهزة.</p>' : ''}</div>`; })()}`;
+  el.querySelectorAll('[data-fd]').forEach(b => b.onclick = () => { view.food = b.dataset.fd; render(); });
   el.querySelectorAll('[data-eat]').forEach(b => b.onclick = () => { const d = day(t); d.meals = d.meals || {}; d.meals[b.dataset.eat] = !d.meals[b.dataset.eat]; save(); render(); });
-  el.querySelectorAll('[data-opt]').forEach(b => b.onclick = () => { const d = day(t); d.choice = b.dataset.opt; d.meals = d.meals || {}; d.meals.m3 = true; save(); render(); });
+  el.querySelectorAll('[data-opt]').forEach(b => b.onclick = () => { if (future) { toast('اختار يومها بعد ما تاكل'); return; } const d = day(t); d.choice = b.dataset.opt; d.meals = d.meals || {}; d.meals.m3 = true; save(); render(); });
   el.querySelectorAll('[data-fs]').forEach(b => b.onclick = () => foodSwapSheet(b.dataset.fs));
-  $('#exAdd').onclick = () => extrasSheet(t);
+  $('#exAdd').onclick = () => future ? toast('سجّل الأكل الزيادة يومها') : extrasSheet(t);
   el.querySelectorAll('[data-exdel]').forEach(b => b.onclick = () => { const d = day(t); d.extras.splice(+b.dataset.exdel, 1); save(); render(); });
   $('#dInfo').onclick = () => openSheet(sheetHead('ليه الأرقام دي؟') + `<p style="line-height:1.8">الهدف ~${fmt(S.settings.kcal)} سعر و~${DIET.protein} جم بروتين في اليوم العادي. الكابتن بيحسب حرقك الحقيقي كل أسبوع من الأكل اللي بتعلّم عليه ومتوسط وزنك، ويقترح تعديل في رز العشا.</p><p style="line-height:1.8" class="muted">علّم على كل وجبة بعد ما تاكلها، وسجّل أي أكل زيادة – ده اللي بيخلي الحسبة صح. اليوم اللي مفيهوش ولا علامة بيتحسب كأنك مشيت على الخطة.</p>`);
 }
