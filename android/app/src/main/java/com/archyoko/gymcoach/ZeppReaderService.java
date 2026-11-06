@@ -372,7 +372,7 @@ public class ZeppReaderService extends AccessibilityService {
         if (!onLog) return;
         // ابدأ
         gRunning = true; gPhase = 0; gScrolls = 0; gTries = 0; gEmpty = 0; gDays = 0; gMonthTries = 0;
-        gGotAny = false; gStarted = System.currentTimeMillis(); gCursor = shift(today(), 1); gWeekCheck = null; pressLater = false; gSig = "";
+        gGotAny = false; gStarted = System.currentTimeMillis(); gCursor = shift(today(), 1); gWeekCheck = null; pressLater = false; gSig = ""; gLastYM = -1; gArrowLeft = p.getBoolean("gainArrowLeft", false);
         gExpanded.clear(); gDaySeen.clear();
         try { gData = new JSONObject(p.getString("gain", "{}")); } catch (Exception e) { gData = new JSONObject(); }
         p.edit().putBoolean("gainRequested", false).putString("gainStatus", "running").apply();
@@ -523,29 +523,55 @@ public class ZeppReaderService extends AccessibilityService {
             // اليوم اللي قبله
             String target = shift(gCursor, -1);
             int tDay = dayNum(target);
-            java.util.Map<Integer, Item> chips = chips(items, monthItem, stripBottom);
-            if (chips.containsKey(tDay)) {
-                tap(chips.get(tDay)); gCursor = target; gPhase = 0; gScrolls = 0; gExpanded.clear(); gTries = 0; gWeekCheck = null;
+            int tYM = Integer.parseInt(target.substring(0, 4)) * 12 + Integer.parseInt(target.substring(5, 7)) - 1;
+            // 1) الشهر: السهم اللي فوق بيغيّر الشهر
+            int shownYM = -1;
+            Matcher my = Pattern.compile("(\\d{4})").matcher(monthItem.text);
+            for (int m = 0; m < 12; m++) if (monthItem.text.startsWith(AR_MON[m])) shownYM = (my.find() ? Integer.parseInt(my.group(1)) : Integer.parseInt(target.substring(0, 4))) * 12 + m;
+            if (shownYM >= 0 && shownYM != tYM) {
+                if (gLastYM >= 0) {
+                    boolean moved = shownYM != gLastYM;
+                    boolean wentPrev = shownYM < gLastYM;
+                    if (!moved || wentPrev != gWantPrev) { gArrowLeft = !gArrowLeft; prefs().edit().putBoolean("gainArrowLeft", gArrowLeft).apply(); }
+                }
+                if (++gTries > 10) { gainStop("month"); return; }
+                gLastYM = shownYM;
+                gWantPrev = tYM < shownYM;
+                pressArrow(root, monthItem, gWantPrev ? gArrowLeft : !gArrowLeft);
                 handler.postDelayed(gainStep, 1500); return;
             }
-            // مش في الأسبوع ده: لو لسه دايسين السهم شوف حصل إيه
-            String sig = new java.util.TreeSet<>(chips.keySet()).toString();
-            if (gWeekCheck != null) {
-                boolean back = chips.containsKey(dayNum(shift(gWeekCheck, -7)));
-                boolean fwd = chips.containsKey(dayNum(shift(gWeekCheck, 7))) && !back;
-                boolean same = sig.equals(gSig);
-                if (fwd) { gArrowLeft = !gArrowLeft; prefs().edit().putBoolean("gainArrowLeft", gArrowLeft).apply(); pressWeekArrow(root, monthItem); pressLater = true; }
-                else if (same) { gArrowLeft = !gArrowLeft; prefs().edit().putBoolean("gainArrowLeft", gArrowLeft).apply(); }   // السهم ده مبيعملش حاجة – جرّب التاني
+            gLastYM = -1;
+            // 2) اليوم في الشريط
+            java.util.Map<Integer, Item> chips = chips(items, monthItem, stripBottom);
+            if (chips.containsKey(tDay)) {
+                tap(chips.get(tDay)); gCursor = target; gPhase = 0; gScrolls = 0; gExpanded.clear(); gTries = 0;
+                handler.postDelayed(gainStep, 1500); return;
             }
-            gSig = sig;
-            if (pressLater) { pressLater = false; pressWeekArrow(root, monthItem); handler.postDelayed(gainStep, 1400); return; }
-            if (++gTries > 14) { gainStop("week"); return; }
-            gWeekCheck = gCursor;
-            pressWeekArrow(root, monthItem);
-            handler.postDelayed(gainStep, 1400);
+            if (++gTries > 14) { gainStop("strip"); return; }
+            // اسحب الشريط ناحية اليوم: الأرقام بتزيد ناحية اليمين
+            int mn = 99, mx = 0, cy = (monthItem.r.bottom + stripBottom) / 2;
+            for (java.util.Map.Entry<Integer, Item> e : chips.entrySet()) { mn = Math.min(mn, e.getKey()); mx = Math.max(mx, e.getKey()); cy = e.getValue().r.centerY(); }
+            boolean leftToRightIncreasing = true;
+            if (chips.size() >= 2) {
+                Item a = chips.get(mn), b = chips.get(mx);
+                leftToRightIncreasing = a.r.centerX() < b.r.centerX();
+            }
+            boolean needLater = chips.isEmpty() || tDay > mx;
+            int w = getResources().getDisplayMetrics().widthPixels;
+            // عشان نشوف أرقام أكبر والأكبر يمين: نسحب الصباع من اليمين للشمال
+            boolean fingerRightToLeft = needLater == leftToRightIncreasing;
+            if (Build.VERSION.SDK_INT >= 24) {
+                android.graphics.Path path = new android.graphics.Path();
+                if (fingerRightToLeft) { path.moveTo(w * 0.85f, cy); path.lineTo(w * 0.15f, cy); } else { path.moveTo(w * 0.15f, cy); path.lineTo(w * 0.85f, cy); }
+                dispatchGesture(new android.accessibilityservice.GestureDescription.Builder()
+                        .addStroke(new android.accessibilityservice.GestureDescription.StrokeDescription(path, 0, 300)).build(), null, null);
+            }
+            handler.postDelayed(gainStep, 1100);
         }
     }
 
+    private int gLastYM = -1;
+    private boolean gWantPrev = true;
     private int gUp = 0;
     private void swipeDown() {
         if (Build.VERSION.SDK_INT < 24) return;
@@ -586,9 +612,8 @@ public class ZeppReaderService extends AccessibilityService {
         return m;
     }
 
-    /** سهم الأسبوع اللي فات جنب اسم الشهر */
-    private void pressWeekArrow(AccessibilityNodeInfo root, Item monthItem) {
-        gArrowLeft = prefs().getBoolean("gainArrowLeft", gArrowLeft);
+    /** سهم الشهر (يمين أو شمال اسم الشهر) */
+    private void pressArrow(AccessibilityNodeInfo root, Item monthItem, boolean left) {
         int w = getResources().getDisplayMetrics().widthPixels;
         int y = monthItem != null ? monthItem.r.centerY() : (int) (getResources().getDisplayMetrics().heightPixels * 0.18);
         Item best = null; int bestDx = Integer.MAX_VALUE;
@@ -598,14 +623,14 @@ public class ZeppReaderService extends AccessibilityService {
             if (x.isClickable()) {
                 Rect r = new Rect(); x.getBoundsInScreen(r);
                 boolean sameRow = Math.abs(r.centerY() - y) < Math.max(60, monthItem != null ? monthItem.r.height() * 2 : 60);
-                boolean side = gArrowLeft ? r.centerX() < w / 2 : r.centerX() > w / 2;
+                boolean side = left ? r.centerX() < w / 2 : r.centerX() > w / 2;
                 boolean small = r.width() < w / 3;
                 if (sameRow && side && small) { int dx = Math.abs(r.centerX() - w / 2); if (dx < bestDx) { bestDx = dx; best = new Item("", r); best.node = x; } }
             }
             for (int i = 0; i < x.getChildCount(); i++) st.add(x.getChild(i));
         }
         if (best != null) tap(best);
-        else tapAt(gArrowLeft ? (int) (w * 0.19) : (int) (w * 0.79), y);
+        else tapAt(left ? (int) (w * 0.19) : (int) (w * 0.79), y);
     }
 
     /** لكل تمرين ظاهر: السطور اللي تحته لحد التمرين اللي بعده. بنحتفظ بأطول قايمة اتشافت (عشان السكرول ميكررش) */
