@@ -117,12 +117,13 @@ function mealsFor(d) {
   });
 }
 const kcalTarget = d => mealsFor(d).reduce((a, m) => a + m.kcal, 0);
+const extraOf = d => { const x = S.days[d] || {}; return (x.extraKcal || 0) + (x.extras || []).reduce((a, e) => a + e.kcal, 0); };
 /* الأكل الفعلي: الوجبات اللي اتعلّم عليها. يوم من غير ولا علامة = غالباً الخطة */
 function intake(d) {
   const ms = mealsFor(d), eaten = (S.days[d] || {}).meals || {};
   const any = Object.values(eaten).some(Boolean);
-  if (!any) return { kcal: kcalTarget(d), logged: false };
-  return { kcal: ms.reduce((a, m) => a + (eaten[m.id] ? m.kcal : 0), 0) + ((S.days[d] || {}).extraKcal || 0), logged: true };
+  if (!any) return { kcal: kcalTarget(d) + extraOf(d), logged: false };
+  return { kcal: ms.reduce((a, m) => a + (eaten[m.id] ? m.kcal : 0), 0) + extraOf(d), logged: true };
 }
 
 /* ================= الكابتن: حرقك الحقيقي وتعديل السعرات ================= */
@@ -919,7 +920,7 @@ function weeklyReport() {
   }
   const notes = []; for (let i = 6; i >= 0; i--) { const d = addDays(t, -i); const n = (S.days[d] || {}).note; if (n) notes.push(`- ${short(d)}: ${n}`); }
   if (notes.length) lines.push('', '## ملاحظاتي', ...notes);
-  const foodDays = []; for (let i = 6; i >= 0; i--) { const d = addDays(t, -i); const it = intake(d); const dd = S.days[d] || {}; foodDays.push(`${short(d)}${dayType(d) === 'mom' ? ' (جمعة ماما)' : dayType(d) === 'lecture' ? ' (محاضرة)' : ''}: ${it.logged ? it.kcal : 'مش متعلّم'}${dd.choice ? ' · ' + dd.choice : ''}${dd.extraKcal ? ' · زيادة ' + dd.extraKcal : ''}`); }
+  const foodDays = []; for (let i = 6; i >= 0; i--) { const d = addDays(t, -i); const it = intake(d); const dd = S.days[d] || {}; foodDays.push(`${short(d)}${dayType(d) === 'mom' ? ' (جمعة ماما)' : dayType(d) === 'lecture' ? ' (محاضرة)' : ''}: ${it.logged ? it.kcal : 'مش متعلّم'}${dd.choice ? ' · ' + dd.choice : ''}${extraOf(d) ? ' · زيادة ' + extraOf(d) + ((dd.extras || []).length ? ' (' + dd.extras.map(e => e.name).join('، ') + ')' : '') : ''}`); }
   lines.push('', '## الأكل', ...foodDays.map(x => '- ' + x));
   const ad = adaptive(); if (ad) lines.push(`- حرق حقيقي محسوب: ${ad.tdee} · اتجاه ${fmt(ad.slopeWk, 2)} كجم/أسبوع · السعرات الحالية ${S.settings.kcal}${S.settings.riceAdj ? ` (رز ${riceAdj() > 0 ? '+' : ''}${riceAdj()} جم)` : ''}`);
   const v = verdict(); lines.push('', `## رأي التطبيق: ${v.t}`, v.d.replace(/<[^>]+>/g, ''));
@@ -944,14 +945,28 @@ function renderFood(el) {
     ${m.special ? m.options.map(o => `<button class="item" style="width:100%;text-align:start" data-opt="${o.id}"><span class="food-ic" style="${m.pick === o.id ? 'background:var(--red);color:#fff' : ''}">${m.pick === o.id ? '✓' : ''}</span><div><b>${esc(o.name)}</b><small>${esc(o.desc)}</small><br><small><span class="num">${o.id === 'box' ? m.boxItems.reduce((a, x) => a + x.kcal, 0) : o.kcal}</span> سعر · <span class="num">${o.p}</span> جم بروتين</small></div></button>`).join('')
       : m.items.map(it => itemRow(it, m.id)).join('')}
     <div class="note"><span class="i">i</span><span class="lbl">ملاحظة</span><span>${esc(m.note)}</span></div></div>`).join('')}
-  <div class="card mt pad"><b>أكل زيادة النهارده؟</b><p class="muted small" style="margin:4px 0 10px">حاجة برة الخطة (حلو، عزومة، سناك). اكتب سعراتها بالتقريب.</p>
-    <div class="quick" style="padding-top:0">${[150, 300, 500, 800].map(k => `<button data-x="${k}">+<span class="num">${k}</span></button>`).join('')}<button data-x="0">مسح</button></div>
-    ${(S.days[t] || {}).extraKcal ? `<p class="small" style="margin:8px 0 0">متسجّل: <b class="num">${S.days[t].extraKcal}</b> سعر زيادة</p>` : ''}</div>`;
+  ${(() => { const ex = (S.days[t] || {}).extras || []; const tot = extraOf(t); return `<div class="card mt"><div class="meal-h"><div><h3>أكل زيادة</h3><small>حلو، مشروب، سناك، عزومة · ${tot ? `<span class="num">${tot}</span> سعر النهارده` : 'مفيش لسه'}</small></div><button class="sq red" id="exAdd" aria-label="ضيف">${ICON.plus}</button></div>
+    ${ex.map((e, i) => `<div class="item"><span class="food-ic">${esc(e.name.trim()[0])}</span><div><b>${esc(e.name)}</b><small><span class="num">${e.kcal}</span> سعر</small></div><button class="mini del" data-exdel="${i}" aria-label="مسح">${ICON.trash}</button></div>`).join('')}
+    ${!ex.length ? '<p class="muted small" style="margin:0;padding:12px 16px">اضغط + واختار اللي أكلته من القايمة – السعرات محسوبة جاهزة.</p>' : ''}</div>`; })()}`;
   el.querySelectorAll('[data-eat]').forEach(b => b.onclick = () => { const d = day(t); d.meals = d.meals || {}; d.meals[b.dataset.eat] = !d.meals[b.dataset.eat]; save(); render(); });
   el.querySelectorAll('[data-opt]').forEach(b => b.onclick = () => { const d = day(t); d.choice = b.dataset.opt; d.meals = d.meals || {}; d.meals.m3 = true; save(); render(); });
   el.querySelectorAll('[data-fs]').forEach(b => b.onclick = () => foodSwapSheet(b.dataset.fs));
-  el.querySelectorAll('[data-x]').forEach(b => b.onclick = () => { const d = day(t); const k = +b.dataset.x; d.extraKcal = k ? (d.extraKcal || 0) + k : 0; if (!d.extraKcal) delete d.extraKcal; save(); render(); });
+  $('#exAdd').onclick = () => extrasSheet(t);
+  el.querySelectorAll('[data-exdel]').forEach(b => b.onclick = () => { const d = day(t); d.extras.splice(+b.dataset.exdel, 1); save(); render(); });
   $('#dInfo').onclick = () => openSheet(sheetHead('ليه الأرقام دي؟') + `<p style="line-height:1.8">الهدف ~${fmt(S.settings.kcal)} سعر و~${DIET.protein} جم بروتين في اليوم العادي. الكابتن بيحسب حرقك الحقيقي كل أسبوع من الأكل اللي بتعلّم عليه ومتوسط وزنك، ويقترح تعديل في رز العشا.</p><p style="line-height:1.8" class="muted">علّم على كل وجبة بعد ما تاكلها، وسجّل أي أكل زيادة – ده اللي بيخلي الحسبة صح. اليوم اللي مفيهوش ولا علامة بيتحسب كأنك مشيت على الخطة.</p>`);
+}
+function extrasSheet(d) {
+  let q = '';
+  const draw = p => {
+    const box = $('#exList', p);
+    box.innerHTML = EXTRAS.map(c => { const its = c.items.filter(([n]) => !q || n.includes(q)); return its.length ? `<div class="section-t">${c.cat}</div>${its.map(([n, k]) => `<button class="alt" data-n="${esc(n)}" data-k="${k}"><span class="food-ic">${esc(n.trim()[0])}</span><span style="flex:1"><b>${esc(n)}</b><small><span class="num">${k}</span> سعر</small></span><span class="link">+</span></button>`).join('')}` : ''; }).join('')
+      + `<div class="section-t">مش لاقيه؟</div><div class="grid2"><input id="exName" class="inp" style="font-size:15px" placeholder="اسم الأكلة"><input id="exK" class="inp num" inputmode="numeric" placeholder="سعرات"></div><button class="btn ghost block mt sm" id="exCustom">ضيف</button><p class="muted small">مش عارف السعرات؟ صوّرها وابعتهالي في الشات وأنا أقولك.</p>`;
+    box.querySelectorAll('[data-n]').forEach(b => b.onclick = () => { const x = day(d); (x.extras = x.extras || []).push({ name: b.dataset.n, kcal: +b.dataset.k }); save(); toast(`اتضاف: ${b.dataset.n} (${b.dataset.k} سعر)`); render(); });
+    $('#exCustom', p).onclick = () => { const n = $('#exName', p).value.trim(), k = parseInt($('#exK', p).value); if (!n || !(k > 0)) { toast('اكتب الاسم والسعرات'); return; } const x = day(d); (x.extras = x.extras || []).push({ name: n, kcal: k }); save(); closeSheet(); render(); toast('اتضاف ✓'); };
+  };
+  openSheet(sheetHead('أكلت إيه زيادة؟', 'دوس على الحاجة – ممكن أكتر من مرة') + `<input id="exQ" class="inp mt" style="font-size:16px" placeholder="🔍 دوّر: كنافة، بيبسي، شاورما…"><div id="exList"></div><button class="btn red block mt" data-close>تمام</button>`, p => {
+    draw(p); $('#exQ', p).oninput = e => { q = e.target.value.trim(); draw(p); };
+  });
 }
 function foodSwapSheet(id) {
   let item, meal; DIET.meals.forEach(m => m.items.forEach(i => { if (i.id === id) { item = i; meal = m; } }));
