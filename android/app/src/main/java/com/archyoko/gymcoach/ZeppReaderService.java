@@ -372,7 +372,7 @@ public class ZeppReaderService extends AccessibilityService {
         if (!onLog) return;
         // ابدأ
         gRunning = true; gPhase = 0; gScrolls = 0; gTries = 0; gEmpty = 0; gDays = 0; gMonthTries = 0;
-        gGotAny = false; gStarted = System.currentTimeMillis(); gCursor = shift(today(), 1); gWeekCheck = null; pressLater = false;
+        gGotAny = false; gStarted = System.currentTimeMillis(); gCursor = shift(today(), 1); gWeekCheck = null; pressLater = false; gSig = "";
         gExpanded.clear(); gDaySeen.clear();
         try { gData = new JSONObject(p.getString("gain", "{}")); } catch (Exception e) { gData = new JSONObject(); }
         p.edit().putBoolean("gainRequested", false).putString("gainStatus", "running").apply();
@@ -514,14 +514,18 @@ public class ZeppReaderService extends AccessibilityService {
                 tap(chips.get(tDay)); gCursor = target; gPhase = 0; gScrolls = 0; gExpanded.clear(); gTries = 0; gWeekCheck = null;
                 handler.postDelayed(gainStep, 1500); return;
             }
-            // مش في الأسبوع ده: لو لسه دايسين السهم شوف رحنا قدام ولا ورا
+            // مش في الأسبوع ده: لو لسه دايسين السهم شوف حصل إيه
+            String sig = new java.util.TreeSet<>(chips.keySet()).toString();
             if (gWeekCheck != null) {
                 boolean back = chips.containsKey(dayNum(shift(gWeekCheck, -7)));
                 boolean fwd = chips.containsKey(dayNum(shift(gWeekCheck, 7))) && !back;
+                boolean same = sig.equals(gSig);
                 if (fwd) { gArrowLeft = !gArrowLeft; prefs().edit().putBoolean("gainArrowLeft", gArrowLeft).apply(); pressWeekArrow(root, monthItem); pressLater = true; }
+                else if (same) { gArrowLeft = !gArrowLeft; prefs().edit().putBoolean("gainArrowLeft", gArrowLeft).apply(); }   // السهم ده مبيعملش حاجة – جرّب التاني
             }
+            gSig = sig;
             if (pressLater) { pressLater = false; pressWeekArrow(root, monthItem); handler.postDelayed(gainStep, 1400); return; }
-            if (++gTries > 6) { gainStop("week"); return; }
+            if (++gTries > 8) { gainStop("week"); return; }
             gWeekCheck = gCursor;
             pressWeekArrow(root, monthItem);
             handler.postDelayed(gainStep, 1400);
@@ -529,6 +533,7 @@ public class ZeppReaderService extends AccessibilityService {
     }
 
     private String gWeekCheck = null;
+    private String gSig = "";
     private boolean pressLater = false;
     private boolean gArrowLeft = false;
 
