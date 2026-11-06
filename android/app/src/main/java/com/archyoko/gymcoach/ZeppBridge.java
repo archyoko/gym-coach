@@ -58,6 +58,35 @@ public class ZeppBridge extends Plugin {
     }
 
     @PluginMethod
+    public void startGain(PluginCall call) {
+        Intent i = getContext().getPackageManager().getLaunchIntentForPackage(ZeppReaderService.GAIN);
+        if (i == null) { call.reject("The Gain Universe مش متسطّب"); return; }
+        prefs().edit().putBoolean("gainRequested", true).putString("gainStatus", "waiting").putString("gainEarliest", call.getString("earliest", "")).apply();
+        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        getContext().startActivity(i);
+        call.resolve();
+    }
+
+    @PluginMethod
+    public void getGain(PluginCall call) {
+        SharedPreferences p = prefs();
+        JSObject r = new JSObject();
+        r.put("data", p.getString("gain", "{}"));
+        r.put("status", p.getString("gainStatus", ""));
+        r.put("days", p.getInt("gainDays", 0));
+        r.put("cursor", p.getString("gainCursor", ""));
+        r.put("raw", p.getString("gainRaw", ""));
+        r.put("installed", getContext().getPackageManager().getLaunchIntentForPackage(ZeppReaderService.GAIN) != null);
+        call.resolve(r);
+    }
+
+    @PluginMethod
+    public void resetGain(PluginCall call) {
+        prefs().edit().remove("gain").remove("gainStatus").remove("gainDays").remove("gainCursor").putBoolean("gainRequested", false).apply();
+        call.resolve();
+    }
+
+    @PluginMethod
     public void setAuto(PluginCall call) {
         prefs().edit().putBoolean("auto", call.getBoolean("enabled", true)).apply();
         call.resolve();

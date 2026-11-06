@@ -49,6 +49,7 @@
     <queries>
         <package android:name="com.huami.watch.pop" />
         <package android:name="com.chipsea.btcontrol.en" />
+        <package android:name="com.thegainuniverse.codebase" />
     </queries>
 
     <!-- Permissions -->

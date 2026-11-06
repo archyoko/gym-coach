@@ -245,3 +245,17 @@ const EXTRAS = [
   { cat: 'سناكس وفاكهة', items: [['كيس شيبسي صغير', 150], ['كيس شيبسي كبير', 300], ['حفنة مكسرات', 180], ['كيس فشار', 150], ['باكو بسكويت / ويفر', 120], ['موزة', 100], ['تفاحة', 80], ['برتقالة', 60], ['3 تمرات', 70]] },
   { cat: 'أكل برة', items: [['ساندوتش فول', 300], ['ساندوتش طعمية', 300], ['ساندوتش شاورما فراخ', 450], ['ساندوتش كبدة', 400], ['برجر', 550], ['حتة بيتزا', 250], ['طبق كشري صغير', 700], ['طبق بطاطس محمرة', 350], ['ربع فطيرة مشلتت', 450], ['رغيف عيش بلدي', 250], ['طبق رز زيادة', 260], ['حتة مكرونة بشاميل', 450], ['5 صوابع محشي', 250]] }
 ];
+
+/* أسماء تمارين The Gain Universe → تمارين البرنامج (lk). اللي مش موجود بيتحفظ في سجل لوحده */
+const GAIN_MAP = {
+  'cable shoulder external rotation': 'er', 'internal rotation': 'ir',
+  'incline dumbbell press': 'incDb',
+  'cable lateral raise': 'cableLat', 'seated db lateral raises': 'seatLat',
+  'triceps push down v.grip': 'pushV', 'cable rope tricep push down': 'ropePush',
+  'cable crunch': 'cableCrunch',
+  'cat cow': 'catCow', 'cable face pull': 'facePull',
+  'single arm lat pulldown chest-supported': 'pdNeutral@1', 'sa cable iliac pulldown': 'pdNeutral@1',
+  't-bar row machine': 'row@2', 'cable pullover benched': 'pullover',
+  'leg press': 'legPress', 'leg extension': 'legExt', 'leg curl': 'lyingCurl',
+  'calf press machine': 'calfPress', 'standing hip abduction': 'abd'
+};

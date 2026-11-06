@@ -31,6 +31,7 @@ import java.util.regex.Pattern;
 public class ZeppReaderService extends AccessibilityService {
     static final String ZEPP = "com.huami.watch.pop";
     static final String OKOK = "com.chipsea.btcontrol.en";
+    static final String GAIN = "com.thegainuniverse.codebase";
     static final String PREFS = "zepp_reader";
 
     private final Handler handler = new Handler(Looper.getMainLooper());
@@ -39,13 +40,14 @@ public class ZeppReaderService extends AccessibilityService {
     private int scrolls = 0;
 
     static class Item {
-        String text; Rect r;
+        String text; Rect r; AccessibilityNodeInfo node;
         Item(String t, Rect r) { this.text = t; this.r = r; }
     }
 
     @Override
     public void onAccessibilityEvent(AccessibilityEvent e) {
         if (e == null || e.getPackageName() == null) return;
+        if (GAIN.contentEquals(e.getPackageName())) { gainKick(); return; }
         if (OKOK.contentEquals(e.getPackageName())) { handler.removeCallbacks(okokTask); handler.postDelayed(okokTask, 900); return; }
         if (!ZEPP.contentEquals(e.getPackageName())) return;
         handler.removeCallbacks(captureTask);
@@ -115,7 +117,7 @@ public class ZeppReaderService extends AccessibilityService {
         if (t == null || t.length() == 0) t = n.getContentDescription();
         if (t != null && t.length() > 0) {
             Rect r = new Rect(); n.getBoundsInScreen(r);
-            out.add(new Item(normDigits(t.toString().trim()), r));
+            Item it = new Item(normDigits(t.toString().trim()), r); it.node = n; out.add(it);
         }
         for (int i = 0; i < n.getChildCount(); i++) {
             AccessibilityNodeInfo c = n.getChild(i);
@@ -338,5 +340,247 @@ public class ZeppReaderService extends AccessibilityService {
             for (int i = 0; i < x.getChildCount(); i++) stack.add(x.getChild(i));
         }
         return best;
+    }
+
+    /* =====================================================================
+       استيراد سجل The Gain Universe: بيلف على الأيام لورا في شاشة "سجل الأوزان"
+       ويفتح كل تمرين ويقرا المجموعات (الوزن · العدات · التاريخ)
+       ===================================================================== */
+    private final Runnable gainStep = this::gainTick;
+    private boolean gRunning = false;
+    private int gPhase = 0, gScrolls = 0, gTries = 0, gEmpty = 0, gMonthTries = 0, gDays = 0;
+    private String gCursor = null;
+    private boolean gGotAny = false;
+    private long gStarted = 0;
+    private final java.util.Set<String> gExpanded = new java.util.HashSet<>();
+    private final java.util.Set<String> gDaySeen = new java.util.HashSet<>();
+    private JSONObject gData = null;
+
+    private static final String[] AR_MON = {"يناير","فبراير","مارس","أبريل","مايو","يونيو","يوليو","أغسطس","سبتمبر","أكتوبر","نوفمبر","ديسمبر"};
+    private static final Pattern DATE = Pattern.compile("(20\\d{2})-(\\d{2})-(\\d{2})");
+    private static final Pattern KG = Pattern.compile("(\\d+(?:\\.\\d+)?)\\s*(?:كجم|kg)");
+    private static final Pattern REPS = Pattern.compile("(\\d+)\\s*(?:عدات|عدة|عده|reps)");
+
+    private void gainKick() {
+        SharedPreferences p = prefs();
+        if (gRunning || !p.getBoolean("gainRequested", false)) return;
+        AccessibilityNodeInfo root = getRootInActiveWindow();
+        if (root == null || root.getPackageName() == null || !GAIN.contentEquals(root.getPackageName())) return;
+        List<Item> items = new ArrayList<>(); collect(root, items, 0);
+        boolean onLog = false;
+        for (Item it : items) if (it.text.contains("سجل الأوزان")) { onLog = true; break; }
+        if (!onLog) return;
+        // ابدأ
+        gRunning = true; gPhase = 0; gScrolls = 0; gTries = 0; gEmpty = 0; gDays = 0; gMonthTries = 0;
+        gGotAny = false; gStarted = System.currentTimeMillis(); gCursor = today();
+        gExpanded.clear(); gDaySeen.clear();
+        try { gData = new JSONObject(p.getString("gain", "{}")); } catch (Exception e) { gData = new JSONObject(); }
+        p.edit().putBoolean("gainRequested", false).putString("gainStatus", "running").apply();
+        handler.postDelayed(gainStep, 1200);
+    }
+
+    private void gainStop(String status) {
+        gRunning = false;
+        handler.removeCallbacks(gainStep);
+        SharedPreferences.Editor ed = prefs().edit();
+        if (gData != null) ed.putString("gain", gData.toString());
+        ed.putString("gainStatus", status).putInt("gainDays", gDays).putLong("gainDone", System.currentTimeMillis()).apply();
+        Intent i = new Intent(this, MainActivity.class);
+        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        try { startActivity(i); } catch (Exception ignored) { }
+    }
+
+    private void dump(List<Item> items) {
+        StringBuilder b = new StringBuilder();
+        for (Item it : items) b.append(it.text).append(" @").append(it.r.left).append(',').append(it.r.top).append(',').append(it.r.right).append(',').append(it.r.bottom)
+                .append(it.node != null && it.node.isClickable() ? " C" : "").append(" | ");
+        prefs().edit().putString("gainRaw", b.length() > 6000 ? b.substring(0, 6000) : b.toString()).apply();
+    }
+
+    private static boolean isHeader(String t) {
+        if (t.length() < 4 || t.length() > 60 || t.matches(".*\\d.*")) return false;
+        int latin = 0, letters = 0;
+        for (char c : t.toCharArray()) { if (Character.isLetter(c)) { letters++; if (c < 128) latin++; } }
+        return letters >= 4 && latin * 10 >= letters * 8 && !t.equalsIgnoreCase("PDF");
+    }
+
+    private boolean tap(Item it) {
+        AccessibilityNodeInfo n = it.node;
+        for (int k = 0; n != null && k < 6; k++) {
+            if (n.isClickable() && n.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return true;
+            n = n.getParent();
+        }
+        return tapAt(it.r.centerX(), it.r.centerY());
+    }
+
+    private boolean tapAt(int x, int y) {
+        if (Build.VERSION.SDK_INT < 24) return false;
+        android.graphics.Path path = new android.graphics.Path(); path.moveTo(x, y);
+        android.accessibilityservice.GestureDescription g = new android.accessibilityservice.GestureDescription.Builder()
+                .addStroke(new android.accessibilityservice.GestureDescription.StrokeDescription(path, 0, 60)).build();
+        return dispatchGesture(g, null, null);
+    }
+
+    /** أكبر عنصر بيسكرول رأسي (القايمة) */
+    private AccessibilityNodeInfo mainScroll(AccessibilityNodeInfo root) { return findScrollable(root); }
+
+    /** شريط الأيام: عنصر بيسكرول أعرض من ما هو طويل */
+    private AccessibilityNodeInfo stripScroll(AccessibilityNodeInfo root, int yTop, int yBottom) {
+        List<AccessibilityNodeInfo> st = new ArrayList<>(); st.add(root);
+        while (!st.isEmpty()) {
+            AccessibilityNodeInfo x = st.remove(st.size() - 1); if (x == null) continue;
+            if (x.isScrollable()) { Rect r = new Rect(); x.getBoundsInScreen(r); if (r.width() > r.height() * 2 && r.centerY() > yTop && r.centerY() < yBottom) return x; }
+            for (int i = 0; i < x.getChildCount(); i++) st.add(x.getChild(i));
+        }
+        return null;
+    }
+
+    private void gainTick() {
+        if (!gRunning) return;
+        if (System.currentTimeMillis() - gStarted > 20 * 60 * 1000L) { gainStop("timeout"); return; }
+        AccessibilityNodeInfo root = getRootInActiveWindow();
+        if (root == null || root.getPackageName() == null || !GAIN.contentEquals(root.getPackageName())) {
+            if (++gTries > 15) { gainStop("left"); return; }
+            handler.postDelayed(gainStep, 1000); return;
+        }
+        List<Item> items = new ArrayList<>(); collect(root, items, 0);
+        items.sort((a, b) -> a.r.top != b.r.top ? a.r.top - b.r.top : a.r.left - b.r.left);
+        dump(items);
+
+        // حدود المناطق
+        int stripBottom = 0, listTop = 0; Item monthItem = null;
+        for (Item it : items) {
+            for (String m : AR_MON) if (it.text.startsWith(m)) { monthItem = it; break; }
+            if (it.text.contains("عدد المجموعات") && listTop == 0) { stripBottom = it.r.top; listTop = it.r.bottom; }
+        }
+        if (listTop == 0) { listTop = root == null ? 0 : 900; stripBottom = listTop; }
+
+        if (gPhase == 0) {
+            // 1) افتح أول تمرين مقفول
+            List<Item> headers = new ArrayList<>();
+            for (Item it : items) if (it.r.top > listTop && isHeader(it.text)) headers.add(it);
+            for (int h = 0; h < headers.size(); h++) {
+                Item hd = headers.get(h);
+                if (gExpanded.contains(hd.text)) continue;
+                int nextTop = h + 1 < headers.size() ? headers.get(h + 1).r.top : Integer.MAX_VALUE;
+                boolean open = false;
+                for (Item it : items) if (it.r.top > hd.r.top && it.r.top < nextTop && (it.text.contains("إضافة وزن") || DATE.matcher(it.text).find())) { open = true; break; }
+                gExpanded.add(hd.text);
+                if (!open) { tap(hd); handler.postDelayed(gainStep, 900); return; }
+            }
+            // 2) اقرا المجموعات الظاهرة
+            readSets(items, headers, listTop);
+            // 3) انزل لتحت
+            AccessibilityNodeInfo sc = mainScroll(root);
+            if (gScrolls < 12 && sc != null && sc.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)) { gScrolls++; handler.postDelayed(gainStep, 900); return; }
+            // اليوم خلص
+            gDays++;
+            boolean had = false;
+            for (String k : gDaySeen) if (k.startsWith(gCursor + "|")) { had = true; break; }
+            if (had) { gEmpty = 0; gGotAny = true; } else gEmpty++;
+            SharedPreferences.Editor ed = prefs().edit();
+            ed.putString("gain", gData.toString()).putInt("gainDays", gDays).putString("gainCursor", gCursor).apply();
+            String earliest = prefs().getString("gainEarliest", "");
+            if ((gGotAny && gEmpty >= 28) || (!gGotAny && gEmpty >= 45) || (!earliest.isEmpty() && gCursor.compareTo(earliest) <= 0)) { gainStop("done"); return; }
+            for (int i = 0; i < gScrolls + 3; i++) { if (sc != null) sc.performAction(AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD); }
+            gScrolls = 0; gExpanded.clear(); gPhase = 1; gTries = 0; gMonthTries = 0;
+            handler.postDelayed(gainStep, 900); return;
+        }
+
+        if (gPhase == 1) {
+            // روح لليوم اللي قبله
+            Calendar c = Calendar.getInstance();
+            String[] pr = gCursor.split("-");
+            c.set(Integer.parseInt(pr[0]), Integer.parseInt(pr[1]) - 1, Integer.parseInt(pr[2]));
+            c.add(Calendar.DAY_OF_MONTH, -1);
+            String target = String.format(Locale.US, "%04d-%02d-%02d", c.get(Calendar.YEAR), c.get(Calendar.MONTH) + 1, c.get(Calendar.DAY_OF_MONTH));
+            int tMonth = c.get(Calendar.MONTH), tDay = c.get(Calendar.DAY_OF_MONTH);
+            // الشهر المعروض
+            int shown = -1;
+            if (monthItem != null) for (int m = 0; m < 12; m++) if (monthItem.text.startsWith(AR_MON[m])) shown = m;
+            if (shown >= 0 && shown != tMonth) {
+                if (++gMonthTries > 4) { gainStop("month"); return; }
+                // أسهم الشهر: عناصر قابلة للضغط في نفس سطر الشهر
+                Item best = null;
+                List<AccessibilityNodeInfo> st = new ArrayList<>(); st.add(root);
+                while (!st.isEmpty()) {
+                    AccessibilityNodeInfo x = st.remove(st.size() - 1); if (x == null) continue;
+                    if (x.isClickable()) {
+                        Rect r = new Rect(); x.getBoundsInScreen(r);
+                        if (Math.abs(r.centerY() - monthItem.r.centerY()) < monthItem.r.height() * 2 && r.width() < monthItem.r.width() * 2) {
+                            boolean prevSide = ((shown - tMonth + 12) % 12) <= 6 ? r.centerX() > monthItem.r.right : r.centerX() < monthItem.r.left;
+                            if (gMonthTries > 2) prevSide = !prevSide; // لو الاتجاه طلع غلط جرّب التاني
+                            if (prevSide) { Item it = new Item("", r); it.node = x; best = it; }
+                        }
+                    }
+                    for (int i = 0; i < x.getChildCount(); i++) st.add(x.getChild(i));
+                }
+                if (best == null) {
+                    // مفيش أسهم ظاهرة كعناصر – اضغط على الطرف
+                    int x = ((shown - tMonth + 12) % 12) <= 6 ? monthItem.r.right + monthItem.r.width() : monthItem.r.left - monthItem.r.width();
+                    if (gMonthTries > 2) x = 2 * monthItem.r.centerX() - x;
+                    tapAt(Math.max(10, x), monthItem.r.centerY());
+                } else tap(best);
+                handler.postDelayed(gainStep, 1400); return;
+            }
+            // دوّر على رقم اليوم في الشريط
+            for (Item it : items) {
+                if (it.r.bottom > stripBottom + 5 || (monthItem != null && it.r.top <= monthItem.r.bottom)) continue;
+                if (it.text.equals(String.valueOf(tDay))) {
+                    tap(it); gCursor = target; gPhase = 0; gScrolls = 0; gExpanded.clear(); gTries = 0;
+                    handler.postDelayed(gainStep, 1500); return;
+                }
+            }
+            // مش ظاهر – حرّك الشريط
+            if (++gTries > 8) { gainStop("strip"); return; }
+            AccessibilityNodeInfo strip = stripScroll(root, monthItem != null ? monthItem.r.bottom : 0, stripBottom + 10);
+            boolean moved = false;
+            if (strip != null) moved = strip.performAction(gTries % 2 == 1 ? AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD : AccessibilityNodeInfo.ACTION_SCROLL_FORWARD);
+            if (!moved && monthItem != null && Build.VERSION.SDK_INT >= 24) {
+                int y = (monthItem.r.bottom + stripBottom) / 2;
+                android.graphics.Path path = new android.graphics.Path();
+                int w = getResources().getDisplayMetrics().widthPixels;
+                if (gTries % 2 == 1) { path.moveTo(w * 0.15f, y); path.lineTo(w * 0.85f, y); } else { path.moveTo(w * 0.85f, y); path.lineTo(w * 0.15f, y); }
+                dispatchGesture(new android.accessibilityservice.GestureDescription.Builder().addStroke(new android.accessibilityservice.GestureDescription.StrokeDescription(path, 0, 350)).build(), null, null);
+            }
+            handler.postDelayed(gainStep, 1100);
+        }
+    }
+
+    /** لكل تمرين ظاهر: السطور اللي تحته لحد التمرين اللي بعده. بنحتفظ بأطول قايمة اتشافت (عشان السكرول ميكررش) */
+    private void readSets(List<Item> items, List<Item> headers, int listTop) {
+        List<List<Item>> rows = new ArrayList<>();
+        for (Item it : items) {
+            if (it.r.top <= listTop) continue;
+            boolean placed = false;
+            for (List<Item> row : rows) { Item f = row.get(0); if (Math.abs(f.r.centerY() - it.r.centerY()) < Math.max(18, f.r.height() / 2)) { row.add(it); placed = true; break; } }
+            if (!placed) { List<Item> nr = new ArrayList<>(); nr.add(it); rows.add(nr); }
+        }
+        try {
+            for (int h = 0; h < headers.size(); h++) {
+                Item hd = headers.get(h);
+                int nextTop = h + 1 < headers.size() ? headers.get(h + 1).r.top : Integer.MAX_VALUE;
+                org.json.JSONArray list = new org.json.JSONArray(); String date = null;
+                for (List<Item> row : rows) {
+                    int y = row.get(0).r.centerY();
+                    if (y <= hd.r.bottom || y >= nextTop) continue;
+                    StringBuilder b = new StringBuilder(); for (Item it : row) b.append(it.text).append(' ');
+                    String t = b.toString();
+                    Matcher md = DATE.matcher(t), mk = KG.matcher(t), mr = REPS.matcher(t);
+                    if (!md.find() || !mr.find()) continue;
+                    date = md.group(1) + "-" + md.group(2) + "-" + md.group(3);
+                    org.json.JSONArray set = new org.json.JSONArray();
+                    set.put(mk.find() ? Double.parseDouble(mk.group(1)) : 0); set.put(Integer.parseInt(mr.group(1)));
+                    list.put(set);
+                }
+                if (date == null || list.length() == 0) continue;
+                JSONObject day = gData.optJSONObject(date); if (day == null) { day = new JSONObject(); gData.put(date, day); }
+                org.json.JSONArray old = day.optJSONArray(hd.text);
+                if (old == null || old.length() < list.length()) day.put(hd.text, list);
+                gDaySeen.add(gCursor + "|" + hd.text);
+                gDaySeen.add(date + "|" + hd.text);
+                if (!date.equals(gCursor)) gCursor = date;
+            }
+        } catch (Exception ignored) { }
     }
 }

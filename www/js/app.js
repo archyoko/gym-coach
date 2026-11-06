@@ -386,6 +386,44 @@ async function restNotify(untilMs, body) {
   try { await LN.cancel({ notifications: [{ id: REST_ID }] }); await LN.schedule({ notifications: [{ id: REST_ID, title: 'خلصت الراحة 💪', body, schedule: { at: new Date(untilMs), allowWhileIdle: true }, isExactNotification: true }] }); } catch (e) { }
 }
 async function restCancel() { if (!LN) return; try { await LN.cancel({ notifications: [{ id: REST_ID }] }); } catch (e) { } }
+/* ================= استيراد The Gain Universe ================= */
+const gainLk = name => GAIN_MAP[name.trim().toLowerCase().replace(/\s+/g, ' ')] || ('gain:' + name.trim());
+async function gainSheet() {
+  if (!Zepp) { toast('شغال في تطبيق الأندرويد بس'); return; }
+  let g = {}; try { g = await Zepp.getGain(); } catch (e) { }
+  await zeppPull();
+  let data = {}; try { data = JSON.parse(g.data || '{}'); } catch (e) { }
+  const dates = Object.keys(data).sort();
+  const nSets = dates.reduce((a, d) => a + Object.values(data[d]).reduce((x, arr) => x + arr.length, 0), 0);
+  const names = [...new Set(dates.flatMap(d => Object.keys(data[d])))];
+  const mapped = names.filter(n => !gainLk(n).startsWith('gain:'));
+  const st = { waiting: 'مستني تفتح سجل الأوزان', running: 'شغال…', done: '✓ خلص', timeout: 'وقف (الوقت خلص)', left: 'وقف (خرجت من التطبيق)', month: 'وقف عند تغيير الشهر', strip: 'وقف (مش لاقي اليوم في الشريط)' }[g.status] || '';
+  openSheet(sheetHead('استيراد من The Gain Universe', 'سجل التمارين القديم') + `
+    ${!zeppState.enabled ? '<div class="note warn"><span class="i">!</span><span>خدمة "كوتش الجيم – قراءة الساعة" لازم تبقى شغالة الأول.</span></div>' : ''}
+    <div class="note mt"><span class="i">1</span><span>اضغط <b>ابدأ</b> ← هيفتح The Gain Universe.</span></div>
+    <div class="note mt"><span class="i">2</span><span>ادخل <b>☰ ← سجل الأوزان</b> وسيب الموبايل. التطبيق هيفتح كل تمرين ويقرا، ويرجع يوم يوم لورا لوحده. ممكن ياخد كام دقيقة.</span></div>
+    <div class="note mt"><span class="i">3</span><span>هيرجعك هنا لما يخلص. اضغط <b>استورد</b>.</span></div>
+    <label class="field"><span>ارجع لحد تاريخ (اختياري)</span><input id="gE" class="inp num" type="date" value=""></label>
+    <button class="btn red block mt" id="gGo">ابدأ</button>
+    ${dates.length ? `<div class="section-t">اللي اتقرا ${st ? '· ' + st : ''}</div>
+      <p style="margin:0;line-height:1.8"><b class="num">${dates.length}</b> يوم · <b class="num">${nSets}</b> مجموعة · من ${dates[0]} لـ ${dates[dates.length - 1]}<br>${mapped.length} تمرين متربط بالبرنامج · ${names.length - mapped.length} تمرين هيتحفظ في سجل لوحده</p>
+      <button class="btn red block mt" id="gImp">استورد ${nSets} مجموعة</button>` : (st ? `<p class="muted small mt">الحالة: ${st}</p>` : '')}
+    ${g.raw ? '<button class="btn ghost block mt sm" id="gRaw">انسخ اللي اتقرا من الشاشة (لو فيه مشكلة ابعتهولي)</button>' : ''}
+    ${dates.length ? '<button class="btn ghost block mt sm" id="gReset">امسح القراية وابدأ من الأول</button>' : ''}`, p => {
+    $('#gGo', p).onclick = async () => { if (!zeppState.enabled) { closeSheet(); zeppSetupSheet(); return; } try { await Zepp.startGain({ earliest: $('#gE', p).value || '' }); } catch (e) { toast(e.message || 'مقدرتش أفتحه'); } };
+    const gi = $('#gImp', p); if (gi) gi.onclick = () => {
+      let n = 0;
+      for (const d of dates) {
+        const key = 'gain-' + d; const ex = {};
+        for (const [name, arr] of Object.entries(data[d])) { ex[gainLk(name)] = arr.map(([w, r]) => ({ w: +w, r: +r, rir: null, src: 'gain', name })); n += arr.length; }
+        S.logs[key] = { date: d, legacy: true, src: 'gain', ex };
+      }
+      S.settings.gainImported = today(); save(); closeSheet(); render(); toast(`اتستورد ${n} مجموعة ✓ – الاقتراحات هتكمّل من آخر أوزانك`);
+    };
+    const gr = $('#gRaw', p); if (gr) gr.onclick = () => copyText(g.raw);
+    const gx = $('#gReset', p); if (gx) gx.onclick = async () => { try { await Zepp.resetGain(); } catch (e) { } closeSheet(); toast('اتمسحت'); };
+  });
+}
 function notifSheet() {
   openSheet(sheetHead('الإشعارات') + `
     <p style="line-height:1.8">الكابتن بيفكّرك: الوزن الصبح، الكرياتين، وجبة الشغل، تمرين النهارده، تجهيز العلب، يوم المحاضرة، جمعة ماما، تقرير الجمعة، والنوم. وعداد الراحة بيرن حتى لو الموبايل مقفول.</p>
@@ -874,6 +912,9 @@ function renderProgress(el) {
   </tbody></table></div>
   <div class="section-t">القوة (أحسن مجموعة محسوبة)</div>
   <div class="card pad scroll-x">${str.length ? `<table class="t"><thead><tr><th>التمرين</th><th>أحسن مجموعة</th><th>التغيير</th></tr></thead><tbody>${str.map(s => { const ch = s.first ? (s.last - s.first) / s.first * 100 : 0; return `<tr><td>${esc(s.name)}</td><td><span class="num">${fmt(s.best.w, 2)}×${s.best.r}</span></td><td>${s.n > 1 ? `<span class="${ch >= 0 ? 'up' : 'down'}">${ch >= 0 ? '+' : ''}${fmt(ch, 0)}%</span>` : '<span class="muted small">مرة واحدة</span>'}</td></tr>`; }).join('')}</tbody></table>` : '<div class="empty">ابدأ تمرين وسجّل المجموعات.</div>'}</div>
+  ${(() => { const old = {}; for (const s of Object.values(S.logs)) for (const [lk, arr] of Object.entries(s.ex)) if (lk.startsWith('gain:') && arr.length) { const o = (old[lk] = old[lk] || { name: lk.slice(5), best: null, last: s.date, n: 0 }); o.n++; if (s.date > o.last) o.last = s.date; for (const x of arr) if (!o.best || x.w * (1 + x.r / 30) > o.best.w * (1 + o.best.r / 30)) o.best = x; }
+    const list = Object.values(old); if (!list.length) return '';
+    return `<div class="section-t">تمارين قديمة من The Gain (مش في البرنامج دلوقتي)</div><div class="card pad scroll-x"><table class="t"><thead><tr><th>التمرين</th><th>أحسن مجموعة</th><th>آخر مرة</th></tr></thead><tbody>${list.map(o => `<tr><td style="direction:ltr;text-align:right">${esc(o.name)}</td><td><span class="num">${fmt(o.best.w, 2)}×${o.best.r}</span></td><td>${short(o.last)}</td></tr>`).join('')}</tbody></table></div>`; })()}
   <div class="section-t">تحليل الميزان والمقاسات</div>
   <div class="card pad">${bodyDates.length ? `<table class="t"><thead><tr><th>التاريخ</th><th>الوزن</th><th>دهون %</th><th>عضل هيكلي</th><th>حشوية</th><th>الوسط</th></tr></thead><tbody>${bodyDates.slice(0, 8).map(d => { const b = S.body[d]; return `<tr><td>${short(d)}</td><td>${b.weight ?? '—'}</td><td>${b.fat ?? '—'}</td><td>${b.skmKg ? b.skmKg + ' كجم' : b.skm ? b.skm + '%' : b.muscle ?? '—'}</td><td>${b.visceral ?? '—'}</td><td>${b.waist ?? '—'}</td></tr>`; }).join('')}</tbody></table>
     ${(() => { const ds = bodyDates.filter(d => S.body[d].fatKg && S.body[d].skmKg); if (ds.length < 2) return ''; const a = S.body[ds[ds.length - 1]], b = S.body[ds[0]]; const df = r1(b.fatKg - a.fatKg), dm = r1(b.skmKg - a.skmKg); return `<p class="small" style="margin:10px 0 0;line-height:1.7">من ${short(ds[ds.length - 1])}: دهون <b class="${df <= 0 ? 'up' : 'down'}">${df > 0 ? '+' : ''}${df} كجم</b> · عضل هيكلي <b class="${dm >= 0 ? 'up' : 'down'}">${dm > 0 ? '+' : ''}${dm} كجم</b></p>`; })()}
@@ -994,6 +1035,7 @@ function renderMenu(el) {
     ['ruler', 'القياسات وتحليل الميزان', bodySheet, ''],
     ['report', 'تقرير الأسبوع للكابتن', () => copyText(weeklyReport()), ''],
     ['bell', 'الإشعارات', notifSheet, S.settings.notif ? 'شغالة' : 'مقفولة'],
+    ['save', 'استيراد من The Gain Universe', gainSheet, S.settings.gainImported ? 'اتستورد' : ''],
     ['shield', 'قواعد الكابتن', rulesSheet, ''],
     ['book', 'المصادر العلمية', sourcesSheet, ''],
     ['save', 'نسخة احتياطية', backupSheet, '']
@@ -1080,7 +1122,10 @@ if (LN) (async () => {
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState !== 'visible') return;
   if (P) { tickPlayer(); keepAwake(true); }
-  if (Zepp && !P) zeppPull().then(() => { if ($('#player').hidden) render(); });
+  if (Zepp && !P) zeppPull().then(async () => {
+    if ($('#player').hidden) render();
+    try { const g = await Zepp.getGain(); if (g.status && g.status !== 'waiting' && g.status !== 'running' && S.settings.gainSeen !== g.status + g.days) { S.settings.gainSeen = g.status + g.days; save(); if ($('#sheet').hidden) gainSheet(); } } catch (e) { }
+  });
   if (LN && !P) scheduleReminders();
   if (!P && native && S.settings.lastSync) { const m = (Date.now() - new Date(S.settings.lastSync)) / 6e4; if (m > 15) hcSync(false); }
 });
