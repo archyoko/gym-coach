@@ -674,7 +674,7 @@ function verdict() {
 function renderHome(el) {
   const t = today(), e = eff(t), set = S.settings, w = curWeek();
   const yd = addDays(t, -1), ey = eff(yd), my = S.days[yd] || {};
-  const needMorning = !(S.days[t] || {}).w || (!zeppState.enabled && my.active == null && my.kcal == null);
+  const needMorning = !e.w || (!zeppState.enabled && my.active == null && my.kcal == null);
   const tdDay = todaysDay(), nd = nextDay();
   const sess = tdDay ? S.logs[sessKey(w, tdDay.key)] : null;
   const doneCount = sess ? Object.values(sess.ex).filter(x => x.length).length : 0;
@@ -686,9 +686,8 @@ function renderHome(el) {
   el.innerHTML = `
   <div class="hello"><small>${nice(t)} · ${daysIn < 0 ? `البرنامج يبدأ بعد ${-daysIn} يوم` : `الأسبوع ${w} من ${set.weeks}`}</small><h1>أهلاً ${esc(set.name)} 👋</h1></div>
   <div class="sync" id="zeppline"></div>
-  <div class="sync" id="syncline"></div>
   ${photoDue() && [5, 6].includes(new Date().getDay()) ? `<button class="verdict info" style="display:block;width:100%;text-align:start;margin-top:12px" id="phBan"><h3>ميعاد صور التقدّم 📸</h3><p>قدام، جنب، ضهر – دقيقة واحدة.</p></button>` : ''}
-  ${needMorning ? `<button class="verdict warn" style="display:block;width:100%;text-align:start;margin-top:12px" id="morning"><h3>تسجيل الصبح ⏱ 20 ثانية</h3><p>${zeppState.enabled ? 'الوزن بس – أرقام الساعة بتتقرا لوحدها.' : 'الوزن + خطوات وسعرات ونوم امبارح من الساعة.'}</p></button>` : ''}
+  ${needMorning ? `<button class="verdict warn" style="display:block;width:100%;text-align:start;margin-top:12px" id="morning"><h3>تسجيل الصبح ⏱ 20 ثانية</h3><p>${zeppState.enabled ? 'اتوزن وافتح التفاصيل في OKOK – بيتسجّل لوحده. أو اكتبه هنا.' : 'الوزن + خطوات وسعرات ونوم امبارح من الساعة.'}</p></button>` : ''}
   <div class="tiles mt">
     <div class="tile"><small>الخطوات</small><b class="num">${fmt(e.steps)}</b><div class="sub">${ey.steps ? `امبارح ${fmt(ey.steps)}` : `الهدف ${fmt(set.steps)}`}</div><div class="bar ${stepPct >= 100 ? 'ok' : ''}"><i style="width:${stepPct}%"></i></div></div>
     <div class="tile"><small>الحرق امبارح (تقديري)</small><b class="num">${fmt(ey.kcal)}</b><div class="sub">${ey.kcal ? `نشاط ${fmt(ey.active)} + راحة ${fmt(bmr(yd))} · عجز ~${fmt(ey.kcal - set.kcal)}` : 'من ساعة Zepp Active'}</div></div>
@@ -722,6 +721,7 @@ function dayEntrySheet(d) {
   const y = addDays(d, -1), my = S.days[y] || {}, hy = S.health[y] || {};
   openSheet(sheetHead(nice(d), 'تسجيل الصبح – 20 ثانية') + `
     <label class="field"><span>الوزن الصبح بعد الحمام (كجم)${h.weight ? ` – الميزان قال ${h.weight}` : ''}</span><input id="fW" class="inp num" inputmode="decimal" value="${m.w ?? ''}" placeholder="${h.weight ?? ''}"></label>
+    ${zeppState.enabled ? '<details style="margin-top:14px"><summary class="muted small">أرقام الساعة بتتقرا لوحدها – صحّحها هنا لو غلط</summary>' : ''}
     <div class="section-t" style="margin-top:18px">من ساعة Zepp Active – يوم امبارح (${short(y)})</div>
     <div class="grid3">
       <label class="field" style="margin-top:0"><span>الخطوات</span><input id="fS" class="inp num" inputmode="numeric" value="${my.steps ?? ''}" placeholder="${hy.steps ?? ''}"></label>
@@ -729,6 +729,7 @@ function dayEntrySheet(d) {
       <label class="field" style="margin-top:0"><span>نوم الليلة (ساعات)</span><input id="fL" class="inp num" inputmode="decimal" value="${m.sleepMin ? r1(m.sleepMin / 60) : ''}" placeholder="${h.zsleep ? r1(h.zsleep / 60) : '7.5'}"></label>
     </div>
     <p class="muted small">${zeppState.enabled ? 'الأرقام دي بتتقرا لوحدها من الساعة – اكتب بس لو عايز تصحّح.' : 'من شاشة "صحة" في Zepp Active. السعرات هناك = النشاط بس، والتطبيق بيزوّد حرق الراحة لوحده.'}</p>
+    ${zeppState.enabled ? '</details>' : ''}
     <label class="field"><span>ملاحظة (وجع، نوم وحش، أكل برة…)</span><textarea id="fN" class="inp">${esc(m.note || '')}</textarea></label>
     <button class="btn red block mt" id="fSave">حفظ</button>`, p => {
     $('#fSave', p).onclick = () => {
@@ -818,7 +819,8 @@ function swapSheet(dk, id, after) {
 }
 
 function rulesSheet() {
-  openSheet(sheetHead('قواعد الكابتن') + RULES.map(r => `<div class="mt"><b>${esc(r.t)}</b><p style="margin:4px 0 0;line-height:1.7" class="muted">${esc(r.d)}</p></div>`).join(''));
+  openSheet(sheetHead('قواعد الكابتن') + RULES.map(r => `<div class="mt"><b>${esc(r.t)}</b><p style="margin:4px 0 0;line-height:1.7" class="muted">${esc(r.d)}</p></div>`).join('')
+    + `<div class="section-t">المصادر العلمية</div>` + SOURCES.map(x => `<a class="row" href="${x[1]}" target="_blank" rel="noopener" style="text-decoration:none"><span style="font-size:14px">${esc(x[0])}</span>${ICON.arr}</a>`).join(''));
 }
 
 /* ---------- شيت تسجيل المجموعة ---------- */
@@ -1062,7 +1064,7 @@ function renderProgress(el) {
     <p class="small" style="line-height:1.7;margin:12px 0 0">متوسط أكلك ${fmt(a.intakeAvg)} سعر. عشان تنزل 0.7% في الأسبوع المثالي ~${fmt(a.ideal)} سعر في اليوم العادي (دلوقتي ${fmt(S.settings.kcal)}).</p>
     ${a.delta ? `<button class="btn red block mt" id="adaptGo">${a.delta > 0 ? `زوّد ${a.delta} سعر (${Math.round(a.delta / 1.3)} جم رز)` : `قلّل ${-a.delta} سعر (${Math.round(-a.delta / 1.3)} جم رز)`}</button><p class="muted small" style="margin:6px 0 0">التعديل محدود بـ 150 سعر في المرة عشان ميبقاش مفاجئ.</p>` : '<p class="up small" style="margin:8px 0 0">السعرات مظبوطة – مفيش تعديل ✓</p>'}
     ${S.settings.riceAdj ? `<button class="btn ghost block mt sm" id="adaptReset">رجّع الرز للأصل (${riceAdj() > 0 ? '+' : ''}${riceAdj()} جم)</button>` : ''}</div>`; })()}
-  <div class="section-t">الوزن – آخر 8 أسابيع</div><div class="card pad">${weightChart()}</div>
+  <div class="section-t">الوزن – آخر 8 أسابيع</div><div class="card pad">${weightChart()}<button class="link small" id="wEdit" style="margin-top:8px">تعديل الأوزان</button></div>
   <div class="section-t">أسبوع بأسبوع</div>
   <div class="card pad scroll-x">${rows.length ? '' : '<p class="muted small" style="margin:0 0 8px">الجدول هيبدأ مع أول أسبوع في البرنامج.</p>'}<table class="t"><thead><tr><th>الأسبوع</th><th>متوسط الوزن</th><th>الخطوات</th><th>النوم</th><th>تمارين</th></tr></thead><tbody>
   ${rows.map((r, i) => { const prev = rows[i + 1]; const ch = prev && prev.aw && r.aw ? r.aw - prev.aw : null; return `<tr><td>${r.wk < 1 ? '—' : r.wk}</td><td>${r.aw ? fmt(r.aw, 1) : '—'} ${ch != null ? `<span class="${ch <= 0 ? 'up' : 'down'} small">${ch <= 0 ? '▼' : '▲'}${fmt(Math.abs(ch), 1)}</span>` : ''}</td><td>${r.st ? fmt(r.st) : '—'}</td><td>${r.sl ? (r.sl / 60).toFixed(1) + ' س' : '—'}</td><td>${r.sessions}/4</td></tr>`; }).join('')}
@@ -1086,6 +1088,7 @@ function renderProgress(el) {
   <button class="btn red block mt" id="report">ابعت تقرير الأسبوع للكابتن</button>
   <p class="muted small" style="text-align:center;margin:6px 0 0">بيفتح Claude على موبايلك والتقرير جاهز – اختار المحادثة دي وابعت.</p>`;
   $('#addBody').onclick = bodySheet;
+  $('#wEdit').onclick = weightsSheet;
   const ag = $('#adaptGo'); if (ag) ag.onclick = () => applyAdaptive(adaptive().delta);
   const ar = $('#adaptReset'); if (ar) ar.onclick = () => { S.settings.kcal = Math.round(S.settings.kcal - riceAdj() * 1.3); S.settings.riceAdj = 0; save(); render(); toast('رجع للأصل ✓'); };
   $('#report').onclick = sendReport;
@@ -1200,22 +1203,24 @@ function foodSwapSheet(id) {
 function renderMenu(el) {
   const rows = [
     ['user', 'ملفي وأهدافي', profileSheet, `${S.settings.kcal} سعر`],
+    ['heart', 'الساعة والميزان', zeppSetupSheet, native ? (zeppState.enabled ? '✓ شغالة' : 'مش شغالة') : ''],
     ['save', 'المزامنة مع Google Drive', cloudSheet, cloudInfo.linked ? '✓ مربوط' : 'مش مربوط'],
-    ['heart', 'الساعة + Health Connect', hcSheet, native ? (S.settings.lastSync ? 'مربوط' : 'مش مربوط') : ''],
-    ['scale', 'سجل الأوزان', weightsSheet, ''],
-    ['ruler', 'القياسات وتحليل الميزان', bodySheet, ''],
-    ['report', 'ابعت تقرير الأسبوع للكابتن', sendReport, S.settings.lastReport ? short(S.settings.lastReport) : ''],
-    ['user', 'صور التقدّم', () => photoDates().length > 1 ? photoCompareSheet() : photoSessionSheet(), photoDates().length ? `${photoDates().length} مرة` : ''],
     ['bell', 'الإشعارات', notifSheet, S.settings.notif ? 'شغالة' : 'مقفولة'],
-    ['save', 'استيراد من The Gain Universe', gainSheet, S.settings.gainImported ? 'اتستورد' : ''],
-    ['shield', 'قواعد الكابتن', rulesSheet, ''],
-    ['book', 'المصادر العلمية', sourcesSheet, ''],
-    ['save', 'نسخة احتياطية', backupSheet, '']
+    ['report', 'ابعت تقرير الأسبوع للكابتن', sendReport, S.settings.lastReport ? short(S.settings.lastReport) : ''],
+    ['shield', 'قواعد الكابتن والمصادر', rulesSheet, ''],
+    ...(S.settings.gainImported ? [] : [['save', 'استيراد من The Gain Universe', gainSheet, '']]),
+    ['report', 'أدوات تانية', moreSheet, '']
   ];
   el.innerHTML = `<div class="hello" style="padding-bottom:18px;border-bottom:1px solid var(--line)"><h1>أهلاً</h1><div style="font-size:22px">${esc(S.settings.name)} 👋</div></div>
    <div class="section-t">الحساب</div><div class="rows">${rows.map((r, i) => `<button class="row" data-r="${i}">${ICON[r[0]]}<span>${r[1]}</span>${r[3] ? `<em>${r[3]}</em>` : ''}${ICON.arr}</button>`).join('')}</div>
-   <p class="muted small mt" style="text-align:center">كوتش الجيم · البيانات محفوظة على الموبايل ده بس</p>`;
+   <p class="muted small mt" style="text-align:center">كوتش الجيم · ${cloudInfo.linked ? 'البيانات متزامنة مع Google Drive' : 'البيانات على الموبايل ده بس'}</p>`;
   el.querySelectorAll('[data-r]').forEach(b => b.onclick = rows[+b.dataset.r][2]);
+}
+function moreSheet() {
+  const items = [['Health Connect (خطوات الموبايل)', hcSheet], ['سجل الأوزان وتعديلها', weightsSheet], ['نسخة احتياطية يدوي (نسخ ولصق)', backupSheet], ...(S.settings.gainImported ? [['استيراد من The Gain تاني', gainSheet]] : [])];
+  openSheet(sheetHead('أدوات تانية', 'حاجات مش هتحتاجها كتير') + items.map((x, i) => `<button class="row" data-m="${i}"><span>${x[0]}</span>${ICON.arr}</button>`).join(''), p => {
+    p.querySelectorAll('[data-m]').forEach(b => b.onclick = () => { closeSheet(); items[+b.dataset.m][1](); });
+  });
 }
 function profileSheet() {
   const s = S.settings;
