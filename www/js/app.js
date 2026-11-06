@@ -1,4 +1,4 @@
-/* كوتش الجيم – منطق التطبيق */
+/* Lifestyle – منطق التطبيق */
 'use strict';
 
 /* ================= أدوات ================= */
@@ -178,7 +178,76 @@ function resolve(ex) {
   const a = ex.alts[i - 1];
   return Object.assign({}, ex, { name: a.name, en: a.en, img: a.img, swapIdx: i, lk: ex.id + '@' + i, baseName: ex.name });
 }
-const exList = k => PROGRAM.ex[k].map(resolve);
+/* التمارين لجلسة: أسبوع مزنوق بيضيف الكتف الجانبي والفيس بول لـ LOWER A، والجاهزية بتقلل المجموعات */
+function exList(k, w, adj) {
+  let list = PROGRAM.ex[k].map(resolve);
+  if (w && isBusy(w) && k === 'lowerA') list = list.concat(PROGRAM.ex.lowerB.filter(e => e.id === 'cableLat2' || e.id === 'facePull').map(resolve));
+  if (adj === 'yellow' || adj === 'red') list = list.map(e => e.kind === 'warm' ? e : Object.assign({}, e, adj === 'yellow' ? { sets: Math.max(1, e.sets - 1) } : { sets: Math.max(1, Math.ceil(e.sets / 2)), rir: e.rir === '—' ? e.rir : '3', fail: false }));
+  return list;
+}
+
+/* ================= خطة الأسبوع: الفايت والمزنوق ================= */
+const OFF = { 6: 0, 0: 1, 1: 2, 2: 3, 3: 4, 4: 5, 5: 6 }; // من السبت
+const plannedDate = (w, k) => addDays(S.settings.start, (w - 1) * 7 + OFF[dayByKey(k).dow]);
+const sessDone = (w, k) => { const s = S.logs[sessKey(w, k)]; return !!(s && Object.values(s.ex).some(a => a.length)); };
+const isBusy = w => !!(S.busy && S.busy[w]);
+const weekPlan = w => DAYS.filter(d => !(isBusy(w) && d.optional)).map(d => ({ d, date: plannedDate(w, d.key), done: sessDone(w, d.key) }));
+const missedOf = w => { const t = today(); return weekPlan(w).filter(x => !x.done && x.date < t); };
+function autoBusy(w) {
+  if (isBusy(w) || (S.busy && S.busy[w] === false)) return;
+  // حصتين فاتوا في نفس الأسبوع → الباقي يتحول 3 أيام (LOWER B يتشال وأهم تمارينه تتنقل)
+  if (missedOf(w).length >= 2) { S.busy = S.busy || {}; S.busy[w] = 'auto'; save(); }
+}
+function todayPlan() {
+  const t = today(); if (diffDays(t, S.settings.start) < 0) return null;
+  const w = curWeek(); autoBusy(w);
+  const plan = weekPlan(w);
+  return { w, today: plan.find(x => x.date === t && !x.done) || null, doneToday: plan.find(x => x.date === t && x.done) || null, miss: missedOf(w)[0] || null, plan };
+}
+
+/* ================= الجاهزية ================= */
+function readiness(d = today()) {
+  const e = eff(d); let score = 0; const why = [];
+  const sl = e.sleep;
+  if (sl != null) { if (sl < 330) { score -= 2; why.push(`نوم ${r1(sl / 60)} ساعة`); } else if (sl < 390) { score -= 1; why.push(`نوم ${r1(sl / 60)} ساعة`); } }
+  let pain = false;
+  for (const s of Object.values(S.logs)) {
+    if (!s.date || s.legacy) continue; const g = diffDays(d, s.date); if (g < 0 || g > 5) continue;
+    if ((s.flags || []).length) pain = true;
+    for (const a of Object.values(s.ex)) if (a.some(x => x.p != null && x.p > 3)) pain = true;
+  }
+  if (pain) { score -= 1; why.push('وجع فوق 3 في آخر 5 أيام'); }
+  let run = 0; for (let i = 1; i <= 3; i++) { const dd = addDays(d, -i); if (Object.values(S.logs).some(s => s.date === dd && !s.legacy && Object.values(s.ex).some(a => a.length))) run++; else break; }
+  if (run >= 2) { score -= 1; why.push(`${run} أيام تمرين ورا بعض`); }
+  const feel = (S.days[d] || {}).feel;
+  if (feel === 'tired') { score -= 2; why.push('حاسس بإرهاق'); } else if (feel === 'meh') { score -= 1; why.push('حاسس نص نص'); }
+  return { level: score <= -2 ? 'red' : score === -1 ? 'yellow' : 'green', why, feel };
+}
+const READY_TXT = { green: ['🟢 جاهز', 'اتمرن عادي.'], yellow: ['🟡 نص نص', 'هشيل مجموعة من كل تمرين النهارده.'], red: ['🔴 مرهق', 'خفيف: نص المجموعات وRIR 3 – أو خليه راحة وامشي 30 دقيقة.'] };
+
+/* ================= نسبة الالتزام ================= */
+function adherence(w) {
+  const t = today(), start = addDays(S.settings.start, (w - 1) * 7), end = addDays(start, 6);
+  if (t < start) return null;
+  const days = []; for (let d = start; d <= end && d <= t; d = addDays(d, 1)) days.push(d);
+  const past = days.filter(d => d < t), isToday = days.includes(t);
+  const ratio = (test, onlyPast) => { let n = 0, ok = 0; for (const d of past) { n++; if (test(d)) ok++; } if (isToday && !onlyPast && test(t)) { n++; ok++; } return n ? ok / n : null; };
+  const plan = weekPlan(w).filter(x => x.date < t || (x.date === t && x.done));
+  const parts = {
+    wo: plan.length ? plan.filter(x => x.done).length / plan.length : null,
+    meals: ratio(d => Object.values((S.days[d] || {}).meals || {}).filter(Boolean).length >= 2),
+    steps: past.length ? past.reduce((a, d) => a + Math.min(1, (eff(d).steps || 0) / S.settings.steps), 0) / past.length : null,
+    weight: ratio(d => !!eff(d).w),
+    cr: ratio(d => !!(S.days[d] || {}).creatine)
+  };
+  const W = { wo: .35, meals: .2, steps: .2, weight: .15, cr: .1 };
+  let sum = 0, wsum = 0; for (const [k, v] of Object.entries(parts)) if (v != null) { sum += v * W[k]; wsum += W[k]; }
+  return wsum ? { score: Math.round(sum / wsum * 100), parts } : null;
+}
+function adherenceStreak() {
+  let n = 0; for (let w = curWeek() - 1; w >= 1; w--) { const a = adherence(w); if (a && a.score >= 80) n++; else break; }
+  return n;
+}
 const unitOf = ex => ex.unit || 'reps';
 const isTimed = ex => unitOf(ex) !== 'reps';
 const repsTxt = ex => ex.reps[0] === ex.reps[1] ? `${ex.reps[0]}` : `${ex.reps[0]}–${ex.reps[1]}`;
@@ -331,10 +400,10 @@ async function zeppFetch() {
 }
 function zeppSetupSheet() {
   openSheet(sheetHead('قراءة الساعة أوتوماتيك', 'إعداد مرة واحدة – دقيقة') + `
-    <p style="line-height:1.8">كوتش الجيم بيقرا الخطوات والسعرات والنوم من Zepp Active، والوزن وتحليل الجسم من OKOK وانت بتتوزن (افتح شاشة <b>التفاصيل</b> بعد الوزن). الخدمة مقفولة على التطبيقين دول بس.</p>
+    <p style="line-height:1.8">Lifestyle بيقرا الخطوات والسعرات والنوم من Zepp Active، والوزن وتحليل الجسم من OKOK وانت بتتوزن (افتح شاشة <b>التفاصيل</b> بعد الوزن). الخدمة مقفولة على التطبيقين دول بس.</p>
     <div class="note"><span class="i">1</span><span>اضغط الزرار ده ← هتفتح صفحة معلومات التطبيق ← اضغط <b>⋮</b> فوق ← <b>السماح بالإعدادات المقيدة</b> (Allow restricted settings). لو مش ظاهرة، كمّل للخطوة 2 الأول.</span></div>
     <button class="btn ghost block mt sm" id="z1">افتح معلومات التطبيق</button>
-    <div class="note mt"><span class="i">2</span><span>اضغط الزرار ده ← <b>التطبيقات المثبتة</b> (Downloaded apps) ← <b>كوتش الجيم – قراءة الساعة</b> ← شغّلها ← وافق.</span></div>
+    <div class="note mt"><span class="i">2</span><span>اضغط الزرار ده ← <b>التطبيقات المثبتة</b> (Downloaded apps) ← <b>Lifestyle – قراءة الساعة</b> ← شغّلها ← وافق.</span></div>
     <button class="btn ghost block mt sm" id="z2">افتح إمكانية الوصول</button>
     <div class="note mt"><span class="i">3</span><span>ارجع هنا واضغط <b>جرّب دلوقتي</b>. هيفتح Zepp Active ويرجعك لوحده.</span></div>
     <button class="btn red block mt" id="z3">جرّب دلوقتي</button>
@@ -370,11 +439,24 @@ async function scheduleReminders() {
     for (let i = 0; i < 14; i++) {
       const d = addDays(today(), i), dow = parseISO(d).getDay(), dt = dayType(d);
       const tr = DAYS.find(x => x.dow === dow);
-      const add = (k, when, title, body) => { if (when.getTime() > now + 30000) list.push({ id: 1000 + i * 20 + k, title, body, schedule: { at: when, allowWhileIdle: true }, isExactNotification: false }); };
+      const add = (k, when, title, body, act) => { if (when.getTime() > now + 30000) list.push(Object.assign({ id: 1000 + i * 20 + k, title, body, schedule: { at: when, allowWhileIdle: true }, isExactNotification: false, extra: { date: d } }, act ? { actionTypeId: act } : {})); };
       const prevMom = isMomFri(addDays(d, -1));
       add(1, at(d, 6, 40), 'اتوزن ⚖️', prevMom ? 'بعد جمعة ماما الوزن هيعلى 1–2 كجم مية – عادي، اتوزن برضه.' : 'بعد الحمام وقبل الأكل، وافتح التفاصيل في OKOK.');
-      add(2, at(d, 9, 10), 'كرياتين 💊', '5 جم مع الفطار.');
-      if (dow !== 5) add(3, at(d, 15, 50), 'وجبة الشغل 🍠', 'البطاطا والزبادي والشيكولاتة – ده وقود التمرين.');
+      add(2, at(d, 9, 10), 'الفطار + كرياتين 💊', '5 جم مع الفطار. اضغط الزرار لما تخلّص.', 'BF');
+      if (dow !== 5) add(3, at(d, 15, 50), 'وجبة الشغل 🍠', 'البطاطا والزبادي والشيكولاتة – ده وقود التمرين.', 'M2');
+      add(12, at(d, 13, 0), 'مية 💧', 'نص لتر دلوقتي.', 'WAT');
+      add(13, at(d, 18, 0), 'مية 💧', 'نص لتر كمان.', 'WAT');
+      if (dt === 'lecture') add(14, at(d, 22, 20), 'العشا النهارده كان إيه؟', 'اختار – الحسبة بتتظبط لوحدها.', 'LEC');
+      else if (dt === 'mom') add(14, at(d, 20, 30), 'أكلت عند ماما قد إيه؟ 😄', 'قول الحقيقة – الكابتن مش هيزعل.', 'MOM');
+      else add(14, at(d, 21, 45), 'العشا 🍗', 'فراخ ورز وسلطة – اضغط لما تخلّص.', 'M3');
+      // إنقاذ: لو تمرين النهارده مخلصش، الصبح اللي بعده يفكّرك (بيتلغي أول ما تسجّل الحصة)
+      if (tr && diffDays(d, S.settings.start) >= 0) {
+        const ww = weekOf(d);
+        if (!(isBusy(ww) && tr.optional) && !sessDone(ww, tr.key) && i < 13) {
+          const nx = addDays(d, 1), nxTr = DAYS.find(x => x.dow === parseISO(nx).getDay());
+          list.push({ id: 1000 + (i + 1) * 20 + 11, title: `فاتك ${tr.title} امبارح؟`, body: nxTr ? `النهارده ${nxTr.title} – لو فاتك تاني الأسبوع هيتحوّل 3 أيام لوحده.` : 'النهارده راحة – اعمله بداله بعد الشغل.', schedule: { at: at(nx, 8, 15), allowWhileIdle: true }, extra: { date: nx, go: 'home' } });
+        }
+      }
       if (dt === 'lecture') add(4, at(d, 16, 0), 'النهارده محاضرة 🎓', 'العشا: العلبة من البيت، أو الطبق الذكي (نص رز، من غير طرب)، أو السوري بملعقة توم واحدة.');
       if (tr) add(5, at(d, 18, 45), `تمرين النهارده: ${tr.title} 💪`, tr.sub);
       if (dt === 'mom') add(6, at(d, 12, 0), 'جمعة ماما 😄', 'البروتين الأول، طبق واحد مليان، حتة حلو واحدة. ومتصومش بكرة.');
@@ -386,6 +468,30 @@ async function scheduleReminders() {
     }
     if (list.length) await LN.schedule({ notifications: list });
   } catch (e) { }
+}
+async function setupNotifActions() {
+  if (!LN) return;
+  try {
+    await LN.registerActionTypes({ types: [
+      { id: 'BF', actions: [{ id: 'bf', title: 'فطرت وخدت الكرياتين ✓' }] },
+      { id: 'M2', actions: [{ id: 'm2', title: 'أكلتها ✓' }] },
+      { id: 'M3', actions: [{ id: 'm3', title: 'أكلته ✓' }] },
+      { id: 'LEC', actions: [{ id: 'box', title: 'علبة البيت' }, { id: 'smart', title: 'الطبق الذكي' }, { id: 'syrian', title: 'سوري' }] },
+      { id: 'MOM', actions: [{ id: 'light', title: 'معقول' }, { id: 'normal', title: 'كويس' }, { id: 'big', title: 'كتير 😅' }] },
+      { id: 'WAT', actions: [{ id: 'w', title: '+½ لتر' }] }
+    ] });
+    LN.addListener('localNotificationActionPerformed', a => handleNotifAction(a.actionId, (a.notification && a.notification.extra) || {}));
+  } catch (e) { }
+}
+function handleNotifAction(id, ex) {
+  const d = ex.date || today(), x = day(d); x.meals = x.meals || {};
+  if (id === 'tap') { if (ex.go && $('#player').hidden) { tab = ex.go; render(); } return; }
+  if (id === 'bf') { x.meals.m1 = true; x.creatine = true; }
+  else if (id === 'm2' || id === 'm3') x.meals[id] = true;
+  else if (['box', 'smart', 'syrian', 'light', 'normal', 'big'].includes(id)) { x.choice = id; x.meals.m3 = true; }
+  else if (id === 'w') x.water = r1((x.water || 0) + 0.5);
+  else return;
+  save(); if ($('#player').hidden) render(); toast('اتسجّل ✓');
 }
 async function restNotify(untilMs, body) {
   if (!LN || !S.settings.notif) return;
@@ -408,7 +514,7 @@ async function cloudPush(loud) {
   catch (e) { if (loud) toast(e.message || 'الحفظ على Drive فشل'); return false; }
   finally { cloudBusy = false; }
 }
-async function cloudRead() { const r = await Zepp.readBackup(); const j = JSON.parse(r.data || '{}'); if (j.app !== 'gym-coach' || !j.state) throw new Error('الملف ده مش نسخة كوتش الجيم'); return j; }
+async function cloudRead() { const r = await Zepp.readBackup(); const j = JSON.parse(r.data || '{}'); if (j.app !== 'gym-coach' || !j.state) throw new Error('الملف ده مش نسخة من Lifestyle'); return j; }
 async function cloudApply(j) {
   S = Object.assign(load(), j.state); S.meta = S.meta || {}; S.meta.updated = j.saved; S.meta.pushed = j.saved; save(true);
   for (const [k, data] of Object.entries(j.photos || {})) { try { const b = await (await fetch(data)).blob(); await pPut(k, b); delete urlCache[k]; } catch (e) { } }
@@ -553,7 +659,7 @@ async function gainSheet() {
   const mapped = names.filter(n => !gainLk(n).startsWith('gain:'));
   const st = { waiting: 'مستني تفتح سجل الأوزان', running: 'شغال…', done: '✓ خلص', timeout: 'وقف (الوقت خلص)', left: 'وقف (خرجت من التطبيق)', month: 'وقف عند تغيير الشهر', strip: 'وقف (مش لاقي اليوم في الشريط)', week: 'وقف عند سهم الأسبوع اللي فات' }[g.status] || '';
   openSheet(sheetHead('استيراد من The Gain Universe', 'سجل التمارين القديم') + `
-    ${!zeppState.enabled ? '<div class="note warn"><span class="i">!</span><span>خدمة "كوتش الجيم – قراءة الساعة" لازم تبقى شغالة الأول.</span></div>' : ''}
+    ${!zeppState.enabled ? '<div class="note warn"><span class="i">!</span><span>خدمة "Lifestyle – قراءة الساعة" لازم تبقى شغالة الأول.</span></div>' : ''}
     <div class="note mt"><span class="i">1</span><span>اضغط <b>ابدأ</b> ← هيفتح The Gain Universe.</span></div>
     <div class="note mt"><span class="i">2</span><span>ادخل <b>☰ ← سجل الأوزان</b> وسيب الموبايل. التطبيق هيدوس على كل يوم، يفتح كل تمرين ويقرا، ولما الأسبوع يخلص يدوس السهم اللي فوق للأسبوع اللي فات. ممكن ياخد كام دقيقة.</span></div>
     <div class="note mt"><span class="i">3</span><span>هيرجعك هنا لما يخلص. اضغط <b>استورد</b>.</span></div>
@@ -584,7 +690,7 @@ function notifSheet() {
     <p style="line-height:1.8">الكابتن بيفكّرك: الوزن الصبح، الكرياتين، وجبة الشغل، تمرين النهارده، تجهيز العلب، يوم المحاضرة، جمعة ماما، تقرير الجمعة، والنوم. وعداد الراحة بيرن حتى لو الموبايل مقفول.</p>
     <button class="btn ${S.settings.notif ? 'ghost' : 'red'} block" id="n1">${S.settings.notif ? '✓ الإشعارات شغالة – اضغط تقفلها' : 'شغّل الإشعارات'}</button>
     <button class="btn ghost block mt sm" id="n2">اسمح بالتنبيه في الميعاد بالظبط (لعداد الراحة)</button>
-    <p class="muted small mt">لو الإشعارات مش بتوصل: إعدادات الموبايل ← التطبيقات ← كوتش الجيم ← البطارية ← "بدون قيود".</p>`, p => {
+    <p class="muted small mt">لو الإشعارات مش بتوصل: إعدادات الموبايل ← التطبيقات ← Lifestyle ← البطارية ← "بدون قيود".</p>`, p => {
     $('#n1', p).onclick = async () => {
       if (!LN) { toast('شغال في تطبيق الأندرويد بس'); return; }
       if (!S.settings.notif) { try { const r = await LN.requestPermissions(); if (r.display !== 'granted') { toast('الإذن اترفض – فعّله من إعدادات التطبيق'); return; } } catch (e) { } }
@@ -675,8 +781,13 @@ function renderHome(el) {
   const t = today(), e = eff(t), set = S.settings, w = curWeek();
   const yd = addDays(t, -1), ey = eff(yd), my = S.days[yd] || {};
   const needMorning = !e.w || (!zeppState.enabled && my.active == null && my.kcal == null);
-  const tdDay = todaysDay(), nd = nextDay();
+  const tp = todayPlan();
+  const tdDay = tp ? (tp.today ? tp.today.d : tp.doneToday ? tp.doneToday.d : null) : todaysDay();
+  const nd = nextDay();
   const sess = tdDay ? S.logs[sessKey(w, tdDay.key)] : null;
+  const ad = tp ? adherence(w) : null, streak = tp ? adherenceStreak() : 0;
+  const rd = readiness();
+  const PART = { wo: 'تمرين', meals: 'أكل', steps: 'خطوات', weight: 'وزن', cr: 'كرياتين' };
   const doneCount = sess ? Object.values(sess.ex).filter(x => x.length).length : 0;
   const lastW = (() => { for (let i = 0; i < 30; i++) { const x = eff(addDays(t, -i)).w; if (x) return { w: x, d: addDays(t, -i) }; } return null; })();
   const v = verdict();
@@ -684,8 +795,12 @@ function renderHome(el) {
   const stepPct = e.steps ? Math.min(100, e.steps / set.steps * 100) : 0;
   const daysIn = diffDays(t, set.start);
   el.innerHTML = `
-  <div class="hello"><small>${nice(t)} · ${daysIn < 0 ? `البرنامج يبدأ بعد ${-daysIn} يوم` : `الأسبوع ${w} من ${set.weeks}`}</small><h1>أهلاً ${esc(set.name)} 👋</h1></div>
+  <div class="hello" style="display:flex;align-items:center;gap:12px"><div style="flex:1"><small>${nice(t)} · ${daysIn < 0 ? `البرنامج يبدأ بعد ${-daysIn} يوم` : `الأسبوع ${w} من ${set.weeks}`}</small><h1>أهلاً ${esc(set.name)} 👋</h1></div>
+    <svg viewBox="0 0 100 100" width="44" height="44" aria-label="Lifestyle" style="flex:none"><rect width="100" height="100" rx="22" fill="var(--red)"/><polyline points="30,18 30,68 45,68 53,44 62,88 70,68 84,68" transform="translate(13 13) scale(.74)" fill="none" stroke="#fff" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
   <div class="sync" id="zeppline"></div>
+  ${ad ? `<div class="card pad mt" style="display:flex;gap:14px;align-items:center"><div style="text-align:center;min-width:76px"><b class="num" style="font-size:34px;color:${ad.score >= 80 ? 'var(--ok)' : ad.score >= 60 ? 'var(--warn)' : 'var(--red)'}">${ad.score}%</b><div class="small muted">التزام الأسبوع</div></div>
+    <div style="flex:1;min-width:0"><div class="chips" style="margin-top:0">${Object.entries(ad.parts).filter(([, v]) => v != null).map(([k, v]) => `<span class="chip ${v >= .8 ? 'ok' : v < .5 ? 'red' : ''}">${PART[k]}<b class="num">${Math.round(v * 100)}%</b></span>`).join('')}</div>
+    <div class="small" style="margin-top:8px">${streak ? `🔥 ${streak} أسبوع ورا بعض فوق 80%` : 'الهدف 80% – أول أسبوع يعدّيها يبدأ السلسلة 🔥'}</div></div></div>` : ''}
   ${photoDue() && [5, 6].includes(new Date().getDay()) ? `<button class="verdict info" style="display:block;width:100%;text-align:start;margin-top:12px" id="phBan"><h3>ميعاد صور التقدّم 📸</h3><p>قدام، جنب، ضهر – دقيقة واحدة.</p></button>` : ''}
   ${needMorning ? `<button class="verdict warn" style="display:block;width:100%;text-align:start;margin-top:12px" id="morning"><h3>تسجيل الصبح ⏱ 20 ثانية</h3><p>${zeppState.enabled ? 'اتوزن وافتح التفاصيل في OKOK – بيتسجّل لوحده. أو اكتبه هنا.' : 'الوزن + خطوات وسعرات ونوم امبارح من الساعة.'}</p></button>` : ''}
   <div class="tiles mt">
@@ -695,8 +810,13 @@ function renderHome(el) {
     <div class="tile" role="button" id="tW"><small>الوزن</small><b class="num">${lastW ? fmt(lastW.w, 1) : '—'}</b><div class="sub">${lastW ? (lastW.d === t ? 'النهارده' : short(lastW.d)) : 'اضغط وسجّل'}</div></div>
   </div>
   <div class="section-t">تمرين النهارده</div>
-  ${tdDay ? `<div class="today"><div style="flex:1"><small>${tdDay.label} · يوم ${DAYS.indexOf(tdDay) + 1}</small><h3>${tdDay.title}</h3><p>${tdDay.sub}${doneCount ? ` · خلصت ${doneCount} تمرين` : ''}</p></div><button class="btn red" id="goW">${doneCount ? 'كمّل' : 'ابدأ'} ${ICON.arrowL}</button></div>`
+  ${tp && tp.today ? `<div class="card pad" style="margin-bottom:12px"><div style="display:flex;align-items:center;gap:10px"><b style="flex:1">${READY_TXT[rd.level][0]}</b>${['good', 'meh', 'tired'].map((f, i) => `<button class="chip ${rd.feel === f || (!rd.feel && f === 'good' && false) ? 'red' : ''}" data-feel="${f}">${['كويس', 'نص نص', 'مرهق'][i]}</button>`).join('')}</div>
+    <p class="small muted" style="margin:8px 0 0">${READY_TXT[rd.level][1]}${rd.why.length ? ' (' + rd.why.join(' · ') + ')' : ''}</p></div>` : ''}
+  ${tp && !tp.today && tp.miss ? `<div class="today" style="background:var(--red)"><div style="flex:1"><small style="color:#ffd9db">فاتك يوم ${tp.miss.d.label}</small><h3>${tp.miss.d.title}</h3><p style="color:#fff">${tp.doneToday ? 'اعمله بكرة لو تقدر.' : 'اعمله النهارده بدل الراحة.'}</p></div>${tp.doneToday ? '' : `<button class="btn" style="background:#fff;color:var(--red)" id="goMiss">ابدأ ${ICON.arrowL}</button>`}</div>`
+    : tdDay ? `<div class="today"><div style="flex:1"><small>${tdDay.label} · يوم ${DAYS.indexOf(tdDay) + 1}</small><h3>${tdDay.title}</h3><p>${tdDay.sub}${doneCount ? ` · خلصت ${doneCount} تمرين` : ''}</p></div><button class="btn red" id="goW">${doneCount ? 'كمّل' : 'ابدأ'} ${ICON.arrowL}</button></div>`
       : `<div class="today"><div style="flex:1"><small>يوم راحة</small><h3>REST</h3><p>الجاي: ${nd.label} – ${nd.title}. امشي ${fmt(set.steps)} خطوة.</p></div></div>`}
+  ${tp && tp.today && tp.miss ? `<p class="small" style="margin:8px 4px 0;color:var(--warn)">وفاتك ${tp.miss.d.title} يوم ${tp.miss.d.label} – ${isBusy(w) ? 'الأسبوع اتحوّل 3 أيام.' : 'اعمله في أقرب يوم راحة.'}</p>` : ''}
+  ${tp && isBusy(w) ? `<p class="small muted" style="margin:6px 4px 0">الأسبوع ده 3 أيام (LOWER B اتشال)</p>` : ''}
   <div class="section-t">النهارده</div>
   <div class="checks">
     <button class="check ${e.creatine ? 'on' : ''}" id="cCr">كرياتين<b>${e.creatine ? '✓ 5 جم' : '5 جم'}</b></button>
@@ -714,6 +834,8 @@ function renderHome(el) {
   $('#cWa').onclick = () => { const d = day(t); d.water = r1(((d.water || 0) + 0.25) > set.water + 1 ? 0 : (d.water || 0) + 0.25); save(); render(); };
   $('#cMe').onclick = () => { tab = 'food'; render(); };
   const g = $('#goW'); if (g) g.onclick = () => { view.week = w; view.day = tdDay.key; startPlayer(w, tdDay.key); };
+  const gm = $('#goMiss'); if (gm) gm.onclick = () => { view.week = w; view.day = tp.miss.d.key; startPlayer(w, tp.miss.d.key); };
+  el.querySelectorAll('[data-feel]').forEach(b => b.onclick = () => { const x = day(t); x.feel = x.feel === b.dataset.feel ? undefined : b.dataset.feel; save(); render(); });
 }
 
 function dayEntrySheet(d) {
@@ -748,7 +870,10 @@ function dayEntrySheet(d) {
 function renderWorkout(el) {
   if (view.week == null) view.week = curWeek();
   if (!view.day) view.day = (todaysDay() || nextDay()).key;
-  const w = view.week, dk = view.day, d = dayByKey(dk), list = exList(dk);
+  const w = view.week, dk = view.day, d = dayByKey(dk);
+  const isNow = w === curWeek() && plannedDate(w, dk) <= today() && !sessDone(w, dk);
+  const rd = isNow ? readiness() : null;
+  const list = exList(dk, w, rd ? rd.level : null);
   const sess = S.logs[sessKey(w, dk)];
   const deload = false;
   // تجميع السوبر سِت
@@ -781,6 +906,10 @@ function renderWorkout(el) {
   <div class="days">${DAYS.map((x, i) => { const s = S.logs[sessKey(w, x.key)]; const has = s && Object.values(s.ex).some(a => a.length); return `<button class="day ${x.key === dk ? 'on' : ''}" data-day="${x.key}">${has ? '<span class="done"></span>' : ''}<small>${x.label}</small><b class="num">${i + 1}</b></button>`; }).join('')}</div>
   <div class="daytitle"><h2>${d.title}</h2><span>${list.length} تمارين</span></div>
   <p class="daysub">${d.sub}${d.optional ? ' · ده اليوم اللي يتشال لو الأسبوع مزنوق' : ''}</p>
+  ${isBusy(w) && d.optional ? `<div class="verdict warn" style="margin-bottom:14px"><h3>الأسبوع ده 3 أيام</h3><p>اليوم ده اتشال، والكتف الجانبي والفيس بول اتنقلوا لـ LOWER A.</p></div>` : ''}
+  ${isBusy(w) && dk === 'lowerA' ? `<p class="small" style="margin:0 4px 12px;color:var(--warn)">+ رفرفة جانبي وفيس بول من LOWER B (أسبوع مزنوق)</p>` : ''}
+  ${rd && rd.level !== 'green' ? `<div class="verdict ${rd.level === 'red' ? 'warn' : 'info'}" style="margin-bottom:14px"><h3>${READY_TXT[rd.level][0]}</h3><p>${READY_TXT[rd.level][1]} (${rd.why.join(' · ')}) – المجموعات تحت متظبطة.</p></div>` : ''}
+  <button class="link small" id="busyBtn" style="margin:0 4px 12px">${isBusy(w) ? 'رجّع الأسبوع 4 أيام' : 'أسبوع مزنوق؟ خليه 3 أيام'}</button>
   ${groups.map(g => `<div class="card">${g.length > 1 ? g.map((ex, i) => exHtml(ex, i + 1)).join('') : exHtml(g[0])}
      ${g.length > 1 ? `<div class="note"><span class="i">i</span><span class="lbl">ملاحظة</span><span>${esc(g[0].kind === 'warm' ? 'إحماء ورا بعض من غير راحة طويلة. ' : '')}${esc(g[0].note)}</span></div>` : `<div class="note"><span class="i">i</span><span class="lbl">ملاحظة</span><span>${esc(g[0].note)}</span></div>`}
    </div>`).join('')}
@@ -794,8 +923,9 @@ function renderWorkout(el) {
   el.querySelectorAll('[data-log]').forEach(b => b.onclick = () => logSheet(w, dk, findEx(dk, b.dataset.log), () => render()));
   $('#startBtn').onclick = () => startPlayer(w, dk);
   $('#rulesBtn').onclick = rulesSheet;
+  $('#busyBtn').onclick = () => { S.busy = S.busy || {}; if (isBusy(w)) S.busy[w] = false; else S.busy[w] = 'manual'; save(); scheduleReminders(); render(); };
 }
-const findEx = (dk, id) => exList(dk).find(e => e.id === id);
+const findEx = (dk, id) => { const w = view.week || curWeek(); const isNow = w === curWeek() && plannedDate(w, dk) <= today() && !sessDone(w, dk); return exList(dk, w, isNow ? readiness().level : null).find(e => e.id === id) || exList(dk, w).find(e => e.id === id); };
 
 function infoSheet(ex, dark) {
   const q = encodeURIComponent(ex.en + ' exercise form');
@@ -885,12 +1015,13 @@ function logSheet(w, dk, ex, onSaved, editRef) {
 /* ================= مشغّل التمرين ================= */
 let P = null; let pTimer = null;
 function startPlayer(w, dk) {
-  const list = exList(dk);
+  const adj = (w === curWeek() && (plannedDate(w, dk) <= today())) ? readiness().level : 'green';
+  const list = exList(dk, w, adj);
   const sess = S.logs[sessKey(w, dk)];
   let idx = list.findIndex(ex => !sess || !sess.ex[ex.lk] || sess.ex[ex.lk].length < ex.sets);
   if (idx < 0) idx = 0;
   const saved = S.active && S.active.w === w && S.active.dk === dk ? S.active : null;
-  P = saved || { w, dk, idx, started: Date.now(), pausedAt: null, pausedMs: 0, rest: null };
+  P = saved || { w, dk, idx, adj, started: Date.now(), pausedAt: null, pausedMs: 0, rest: null };
   if (!saved) P.idx = idx;
   ensureSess(w, dk).start = ensureSess(w, dk).start || Date.now();
   S.active = P; save();
@@ -920,10 +1051,10 @@ function tickPlayer() {
     if (left <= 0) { vibrate([300, 120, 300]); endRest(); }
   }
 }
-function endRest() { restCancel(); if (!P) return; const adv = P.rest && P.rest.advance; P.rest = null; if (adv) P.idx = Math.min(P.idx + 1, exList(P.dk).length - 1); S.active = P; save(); drawPlayer(); }
+function endRest() { restCancel(); if (!P) return; const adv = P.rest && P.rest.advance; P.rest = null; if (adv) P.idx = Math.min(P.idx + 1, exList(P.dk, P.w, P.adj).length - 1); S.active = P; save(); drawPlayer(); }
 function drawPlayer() {
   const root = $('#player'); if (!P) return;
-  const list = exList(P.dk), ex = list[P.idx], sess = ensureSess(P.w, P.dk);
+  const list = exList(P.dk, P.w, P.adj), ex = list[P.idx], sess = ensureSess(P.w, P.dk);
   const doneSets = (sess.ex[ex.lk] || []).length;
   const allDone = list.every(e => (sess.ex[e.lk] || []).length >= e.sets);
   const segs = list.map((e, i) => `<i class="${i === P.idx ? 'cur' : (sess.ex[e.lk] || []).length >= e.sets ? 'done' : ''}"></i>`).join('');
@@ -934,7 +1065,7 @@ function drawPlayer() {
     root.innerHTML = `<div class="segs">${segs}</div><div class="done-screen"><h2>عاش يا بطل 💪</h2><p>${dayByKey(P.dk).title} · الأسبوع ${P.w}</p>
       <div class="p-stats" style="justify-content:space-around"><div><b class="num">${clock(elapsed())}</b><small>الوقت</small></div><div><b class="num">${nSets}</b><small>مجموعة</small></div><div><b class="num">${fmt(vol)}</b><small>كجم حجم</small></div></div>
       <button class="btn red block mt" id="pEnd">إنهاء</button><button class="btn outline block mt" style="background:transparent;color:#fff;border-color:#fff" id="pBack">رجوع للتمارين</button></div>`;
-    $('#pEnd').onclick = () => { sess.end = Date.now(); save(); closePlayer(); toast('اتسجّل التمرين ✓'); };
+    $('#pEnd').onclick = () => { sess.end = Date.now(); save(); closePlayer(); scheduleReminders(); toast('اتسجّل التمرين ✓'); };
     $('#pBack').onclick = () => { P.finished = false; drawPlayer(); };
     return;
   }
@@ -996,13 +1127,13 @@ function bindRest() {
 }
 function startRest(sec, advance) {
   P.rest = { until: Date.now() + sec * 1000, total: sec, advance }; S.active = P; save(); drawPlayer();
-  const list = exList(P.dk); const nx = advance ? list[Math.min(P.idx + 1, list.length - 1)] : list[P.idx];
+  const list = exList(P.dk, P.w, P.adj); const nx = advance ? list[Math.min(P.idx + 1, list.length - 1)] : list[P.idx];
   restNotify(P.rest.until, `${advance ? 'التمرين الجاي' : 'المجموعة الجاية'}: ${nx.name}`);
 }
 function painStop(ex) {
   openSheet(sheetHead('وقّف التمرين ده', 'الوجع عدّى 3/10') + `<p style="line-height:1.8">متكمّلش ${esc(ex.name)} النهارده. ${ex.pain ? 'اعمل بداله ثبات خفيف 30 ثانية بزاوية 90° لو مش بيوجع، أو سيبه خالص.' : ''} لو الوجع فضل لبكرة الصبح أو زاد، المرة الجاية جرّب البديل أو قلّل الوزن للنص.</p>
     <button class="btn red block mt" id="psNext">التمرين اللي بعده</button><button class="btn ghost block mt" data-close>رجوع</button>`, p => {
-    $('#psNext', p).onclick = () => { closeSheet(); const list = exList(P.dk); if (P.idx < list.length - 1) P.idx++; save(); drawPlayer(); };
+    $('#psNext', p).onclick = () => { closeSheet(); const list = exList(P.dk, P.w, P.adj); if (P.idx < list.length - 1) P.idx++; save(); drawPlayer(); };
   });
   const s = ensureSess(P.w, P.dk); (s.flags = s.flags || []).push({ ex: ex.lk, pain: true, t: Date.now() }); save();
 }
@@ -1114,13 +1245,14 @@ function bodySheet() {
 function weeklyReport() {
   const t = today(), wk = curWeek(), set = S.settings;
   const now = avgWeight(t), prev = avgWeight(addDays(t, -7));
-  const lines = [`# تقرير ${diffDays(t, set.start) < 0 ? 'قبل بداية البرنامج' : 'الأسبوع ' + wk} – كوتش الجيم`, `الفترة: ${addDays(t, -6)} → ${t}`, ''];
+  const lines = [`# تقرير ${diffDays(t, set.start) < 0 ? 'قبل بداية البرنامج' : 'الأسبوع ' + wk} – Lifestyle`, `الفترة: ${addDays(t, -6)} → ${t}`, ''];
   lines.push('## الوزن والنشاط');
   const daily = []; for (let i = 6; i >= 0; i--) { const d = addDays(t, -i); const e = eff(d); daily.push(`${short(d)}: ${e.w ?? '—'} كجم · ${e.steps ?? '—'} خطوة · نشاط ${e.active ?? '—'} · حرق تقديري ${e.kcal ?? '—'} · نوم ${e.sleep ? (e.sleep / 60).toFixed(1) + 'س' : '—'}${e.creatine ? ' · كرياتين✓' : ''}`); }
   lines.push(`- متوسط الوزن: ${now ? fmt(now.avg, 2) : '—'} (الأسبوع اللي فات ${prev ? fmt(prev.avg, 2) : '—'})`);
   lines.push(`- متوسط الخطوات: ${fmt(avgOf('steps', t))} (الهدف ${set.steps}) · متوسط الحرق: ${fmt(avgOf('kcal', t))} · متوسط النوم: ${avgOf('sleep', t) ? (avgOf('sleep', t) / 60).toFixed(1) + ' ساعة' : '—'}`);
   lines.push(...daily.map(x => '  - ' + x));
   const bd = Object.keys(S.body).sort().pop(); if (bd) { const b = S.body[bd]; lines.push(`- آخر قياس (${bd}): وزن ${b.weight ?? '—'} · دهون ${b.fat ?? '—'}% (${b.fatKg ?? '—'} كجم) · عضل هيكلي ${b.skmKg ?? '—'} كجم (${b.skm ?? '—'}%) · مية ${b.water ?? '—'}% · حشوية ${b.visceral ?? '—'} · BMR ${b.bmr ?? '—'} · وسط ${b.waist ?? '—'} سم`); }
+  { const a = adherence(wk); if (a) lines.push('', `## الالتزام: ${a.score}% (تمرين ${a.parts.wo != null ? Math.round(a.parts.wo * 100) : '—'}% · أكل ${a.parts.meals != null ? Math.round(a.parts.meals * 100) : '—'}% · خطوات ${a.parts.steps != null ? Math.round(a.parts.steps * 100) : '—'}% · وزن ${a.parts.weight != null ? Math.round(a.parts.weight * 100) : '—'}% · كرياتين ${a.parts.cr != null ? Math.round(a.parts.cr * 100) : '—'}%)${isBusy(wk) ? ' · أسبوع مزنوق (3 أيام)' : ''} · سلسلة ${adherenceStreak()}`); }
   lines.push('', '## التمرين');
   { const old = Object.values(S.logs).filter(x => x.src === 'gain' && x.date >= addDays(t, -6) && x.date <= t).sort((a, b) => a.date.localeCompare(b.date));
     old.forEach(x => lines.push(`- ${x.date} (من The Gain): ${Object.entries(x.ex).map(([k, a]) => `${(a[0] && a[0].name) || k} ${a.map(z => z.w + '×' + z.r).join(' ')}`).join(' | ')}`)); }
@@ -1213,7 +1345,7 @@ function renderMenu(el) {
   ];
   el.innerHTML = `<div class="hello" style="padding-bottom:18px;border-bottom:1px solid var(--line)"><h1>أهلاً</h1><div style="font-size:22px">${esc(S.settings.name)} 👋</div></div>
    <div class="section-t">الحساب</div><div class="rows">${rows.map((r, i) => `<button class="row" data-r="${i}">${ICON[r[0]]}<span>${r[1]}</span>${r[3] ? `<em>${r[3]}</em>` : ''}${ICON.arr}</button>`).join('')}</div>
-   <p class="muted small mt" style="text-align:center">كوتش الجيم · ${cloudInfo.linked ? 'البيانات متزامنة مع Google Drive' : 'البيانات على الموبايل ده بس'}</p>`;
+   <p class="muted small mt" style="text-align:center">Lifestyle · ${cloudInfo.linked ? 'البيانات متزامنة مع Google Drive' : 'البيانات على الموبايل ده بس'}</p>`;
   el.querySelectorAll('[data-r]').forEach(b => b.onclick = rows[+b.dataset.r][2]);
 }
 function moreSheet() {
@@ -1241,7 +1373,7 @@ function profileSheet() {
 function hcSheet() {
   openSheet(sheetHead('Health Connect', 'Zepp + ميزان OKOK') + (native ? `
     <p style="line-height:1.8">التطبيق بيقرا من Health Connect: الخطوات، الحرق الكلي، النوم، النبض وقت الراحة، الوزن ونسبة الدهون. مبيكتبش حاجة.</p>
-    <div class="note"><span class="i">1</span><span><b>الساعة:</b> Zepp Active مبيبعتش لـ Health Connect، فكوتش الجيم بيقرا أرقامه من الشاشة مباشرة.</span></div>
+    <div class="note"><span class="i">1</span><span><b>الساعة:</b> Zepp Active مبيبعتش لـ Health Connect، فLifestyle بيقرا أرقامه من الشاشة مباشرة.</span></div>
     <button class="btn red block mt sm" id="hcZ">إعداد قراءة الساعة</button>
     <div class="note mt"><span class="i">2</span><span><b>OKOK:</b> لو فيه ربط بـ Google Fit فعّله، وفي Google Fit فعّل "Sync Fit with Health Connect". لو مفيش، سجّل الوزن يدوي من الرئيسية.</span></div>
     <button class="btn red block mt" id="hc1">اربط / حدّث الأذونات</button>
@@ -1293,6 +1425,7 @@ else render();
 if (native && S.settings.lastSync) hcSync(false);
 if (Zepp) zeppPull().then(() => { if ($('#player').hidden) render(); });
 if (Zepp) cloudPullIfNewer().then(() => { if (!cloudInfo.linked && !S.settings.cloudAsked && Object.keys(S.logs).length > 1) { S.settings.cloudAsked = true; save(); setTimeout(() => { if ($('#sheet').hidden && $('#player').hidden) cloudSheet(); }, 1500); } });
+if (LN) setupNotifActions();
 if (LN) (async () => {
   try { if (S.settings.notif && !S.settings.notifAsked) { S.settings.notifAsked = true; save(); await LN.requestPermissions(); } } catch (e) { }
   scheduleReminders();

@@ -1,8 +1,8 @@
 {
   "appId": "com.archyoko.gymcoach",
-  "appName": "كوتش الجيم",
+  "appName": "Lifestyle",
   "webDir": "www",
   "android": {
-    "backgroundColor": "#101614"
+    "backgroundColor": "#FFFFFF"
   }
 }

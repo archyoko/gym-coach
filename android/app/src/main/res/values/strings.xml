@@ -1,9 +1,9 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">كوتش الجيم</string>
-    <string name="title_activity_main">كوتش الجيم</string>
+    <string name="app_name">Lifestyle</string>
+    <string name="title_activity_main">Lifestyle</string>
     <string name="package_name">com.archyoko.gymcoach</string>
     <string name="custom_url_scheme">com.archyoko.gymcoach</string>
-    <string name="zepp_reader_label">كوتش الجيم – قراءة الساعة</string>
-    <string name="zepp_reader_desc">بيقرا الخطوات والسعرات والنوم من Zepp Active، والوزن وتحليل الجسم من OKOK International، وسجل التمارين من The Gain Universe لما تطلب استيراده – التطبيقات دي بس – عشان يتسجلوا في كوتش الجيم أوتوماتيك. مبيقراش أي تطبيق تاني ومبيبعتش أي بيانات برة الموبايل.</string>
+    <string name="zepp_reader_label">Lifestyle – قراءة الساعة</string>
+    <string name="zepp_reader_desc">بيقرا الخطوات والسعرات والنوم من Zepp Active، والوزن وتحليل الجسم من OKOK International، وسجل التمارين من The Gain Universe لما تطلب استيراده – التطبيقات دي بس – عشان يتسجلوا في Lifestyle أوتوماتيك. مبيقراش أي تطبيق تاني ومبيبعتش أي بيانات برة الموبايل.</string>
 </resources>
