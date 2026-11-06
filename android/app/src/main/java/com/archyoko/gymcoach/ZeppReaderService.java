@@ -476,7 +476,11 @@ public class ZeppReaderService extends AccessibilityService {
         if (gPhase == 0) {
             // 1) افتح أول تمرين مقفول
             List<Item> headers = new ArrayList<>();
-            for (Item it : items) if (it.r.top > listTop && isHeader(it.text)) headers.add(it);
+            for (Item it : items) {
+                if (it.r.top <= listTop) continue;
+                String first = it.text.split("\n")[0].trim();     // الكارت المفتوح: الاسم + ملخصه في نفس العنصر
+                if (isHeader(first)) { Item h = new Item(first, it.r); h.node = it.node; headers.add(h); }
+            }
             for (int h = 0; h < headers.size(); h++) {
                 Item hd = headers.get(h);
                 if (gExpanded.contains(hd.text)) continue;
@@ -506,6 +510,12 @@ public class ZeppReaderService extends AccessibilityService {
         }
 
         if (gPhase == 1) {
+            // لو الصفحة نازلة لتحت (الشهر والأيام مش ظاهرين) اطلع فوق الأول
+            if (monthItem == null) {
+                AccessibilityNodeInfo up = mainScroll(root, 0);
+                if (up == null) up = findScrollable(root);
+                if (up != null && gTries < 12) { for (int i = 0; i < 6; i++) up.performAction(AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD); gTries++; handler.postDelayed(gainStep, 900); return; }
+            }
             // اليوم اللي قبله
             String target = shift(gCursor, -1);
             int tDay = dayNum(target);
@@ -525,7 +535,7 @@ public class ZeppReaderService extends AccessibilityService {
             }
             gSig = sig;
             if (pressLater) { pressLater = false; pressWeekArrow(root, monthItem); handler.postDelayed(gainStep, 1400); return; }
-            if (++gTries > 8) { gainStop("week"); return; }
+            if (++gTries > 14) { gainStop("week"); return; }
             gWeekCheck = gCursor;
             pressWeekArrow(root, monthItem);
             handler.postDelayed(gainStep, 1400);
@@ -602,7 +612,7 @@ public class ZeppReaderService extends AccessibilityService {
                 org.json.JSONArray list = new org.json.JSONArray(); String date = null;
                 for (List<Item> row : rows) {
                     int y = row.get(0).r.centerY();
-                    if (y <= hd.r.bottom || y >= nextTop) continue;
+                    if (y <= hd.r.top + 20 || y >= nextTop) continue;
                     StringBuilder b = new StringBuilder(); for (Item it : row) b.append(it.text).append(' ');
                     String t = b.toString();
                     Matcher md = DATE.matcher(t), mk = KG.matcher(t), mr = REPS.matcher(t);
