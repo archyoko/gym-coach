@@ -463,17 +463,15 @@ public class ZeppReaderService extends AccessibilityService {
         items.sort((a, b) -> a.r.top != b.r.top ? a.r.top - b.r.top : a.r.left - b.r.left);
         dump(items);
 
-        // حدود المناطق
-        int stripBottom = 0, listTop = 0; Item monthItem = null;
-        for (Item it : items) {
-            for (String m : AR_MON) if (it.text.startsWith(m)) { monthItem = it; break; }
-            if (it.text.contains("عدد المجموعات") && listTop == 0) { stripBottom = it.r.top; listTop = it.r.bottom; }
-        }
+        // حدود المناطق: الشهر فوق، وتحته شريط الأيام، وتحته القايمة
+        Item monthItem = null;
+        for (Item it : items) { for (String m : AR_MON) if (it.text.startsWith(m)) { monthItem = it; break; } if (monthItem != null) break; }
         int H = getResources().getDisplayMetrics().heightPixels;
-        if (listTop == 0) {
-            stripBottom = monthItem != null ? monthItem.r.bottom + (int) (H * 0.18) : (int) (H * 0.4);
-            listTop = stripBottom;
-        }
+        int stripBottom = monthItem != null ? monthItem.r.bottom + (int) (H * 0.18) : (int) (H * 0.4);
+        int chipsBottom = 0;
+        for (Item it : chips(items, monthItem, stripBottom).values()) chipsBottom = Math.max(chipsBottom, it.r.bottom);
+        if (chipsBottom > 0) stripBottom = chipsBottom + 5;
+        int listTop = stripBottom;
 
         if (gPhase == 0) {
             // 1) افتح أول تمرين مقفول
@@ -585,8 +583,9 @@ public class ZeppReaderService extends AccessibilityService {
     /** لكل تمرين ظاهر: السطور اللي تحته لحد التمرين اللي بعده. بنحتفظ بأطول قايمة اتشافت (عشان السكرول ميكررش) */
     private void readSets(List<Item> items, List<Item> headers, int listTop) {
         List<List<Item>> rows = new ArrayList<>();
+        int H = getResources().getDisplayMetrics().heightPixels;
         for (Item it : items) {
-            if (it.r.top <= listTop) continue;
+            if (it.r.top <= listTop || it.r.height() > H / 8) continue;   // ملخص اليوم الكبير مش سطر
             boolean placed = false;
             for (List<Item> row : rows) { Item f = row.get(0); if (Math.abs(f.r.centerY() - it.r.centerY()) < Math.max(18, f.r.height() / 2)) { row.add(it); placed = true; break; } }
             if (!placed) { List<Item> nr = new ArrayList<>(); nr.add(it); rows.add(nr); }
