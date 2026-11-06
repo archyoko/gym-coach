@@ -53,13 +53,14 @@ function load() {
   try { raw = JSON.parse(localStorage.getItem(KEY) || 'null'); } catch (e) { raw = null; }
   if (!raw) raw = JSON.parse(JSON.stringify(SEED));
   raw.settings = Object.assign({}, SEED.settings, raw.settings || {});
-  for (const k of ['days', 'health', 'logs', 'body', 'swaps', 'foodSwaps', 'photos']) raw[k] = raw[k] || {};
+  for (const k of ['days', 'health', 'logs', 'body', 'swaps', 'foodSwaps', 'photos', 'checkins', 'repOverride', 'mealPhotos', 'coach']) raw[k] = raw[k] || {};
+  raw.inbox = raw.inbox || []; raw.shop = raw.shop || null;
   return raw;
 }
 function save(fromCloud) {
   if (!fromCloud) { S.meta = S.meta || {}; S.meta.updated = Date.now(); }
   try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { toast('مقدرتش أحفظ – المساحة مليانة؟'); }
-  if (!fromCloud && typeof cloudSoon === 'function') cloudSoon();
+  if (!fromCloud && typeof cloudSoon === 'function') { cloudSoon(); ghSoon(); }
 }
 S = load();
 // قراءة الميزان يوم 31/10 من صور OKOK
@@ -174,9 +175,23 @@ const sessKey = (w, k) => `${w}-${k}`;
 /* التمرين بعد التبديل */
 function resolve(ex) {
   const i = S.swaps[ex.id] || 0;
-  if (!i || !ex.alts[i - 1]) return Object.assign({}, ex, { swapIdx: 0, lk: ex.id });
-  const a = ex.alts[i - 1];
-  return Object.assign({}, ex, { name: a.name, en: a.en, img: a.img, swapIdx: i, lk: ex.id + '@' + i, baseName: ex.name });
+  let r;
+  if (!i || !ex.alts[i - 1]) r = Object.assign({}, ex, { swapIdx: 0, lk: ex.id });
+  else { const a = ex.alts[i - 1]; r = Object.assign({}, ex, { name: a.name, en: a.en, img: a.img, swapIdx: i, lk: ex.id + '@' + i, baseName: ex.name }); }
+  const ov = S.repOverride && S.repOverride[r.lk];
+  if (ov) r = Object.assign(r, { reps: ov, baseReps: ex.reps });
+  return r;
+}
+/* الثبات: آخر 3 حصص من غير تقدّم في أحسن مجموعة محسوبة */
+function plateau(ex) {
+  if (isTimed(ex) || ex.kind === 'warm' || ex.kind === 'rehab') return null;
+  const byDate = {}; for (const s of history(ex.lk)) { const e = (+s.w || 0) * (1 + (+s.r || 0) / 30); byDate[s.date] = Math.max(byDate[s.date] || 0, e); }
+  const ds = Object.keys(byDate).sort(); if (ds.length < 3) return null;
+  const last3 = ds.slice(-3).map(d => byDate[d]);
+  if (last3[2] > last3[0] * 1.01) return null;
+  const [lo, hi] = ex.reps;
+  const next = hi <= 12 ? [hi, hi + 5] : [Math.max(5, lo - 4), lo];
+  return { next, since: ds[ds.length - 3] };
 }
 /* التمارين لجلسة: أسبوع مزنوق بيضيف الكتف الجانبي والفيس بول لـ LOWER A، والجاهزية بتقلل المجموعات */
 function exList(k, w, adj) {
@@ -287,6 +302,8 @@ function suggest(ex, curKey) {
   if (allTop && warmish) return { txt: `آخر مرة: ${lastTxt}. ده ${ex.kind === 'rehab' ? 'تأهيل' : 'إحماء'} – زوّد بس لو مفيش أي وجع، وبأصغر وزن (${fmt(top + inc, 2)} كجم).`, w: top };
   if (allTop) return { txt: `آخر مرة: ${lastTxt}. كل المجموعات وصلت ${hi} → زوّد لـ <b>${fmt(top + inc, 2)} كجم</b>.`, w: r1(top + inc), up: true };
   if (anyLow) return { txt: `آخر مرة: ${lastTxt}. فيه مجموعة تحت ${lo} عدات → خليك على <b>${fmt(top, 2)} كجم</b> أو قلّل سنة.`, w: top };
+  const pl = plateau(ex);
+  if (pl) return { txt: `آخر مرة: ${lastTxt}. <b>ثابت 3 حصص</b> من ${short(pl.since)} – جرّب نطاق ${pl.next[0]}–${pl.next[1]} عدة بوزن ${pl.next[0] > hi ? 'أخف' : 'أتقل'} عشان الجسم ياخد إشارة جديدة.`, w: top, plateau: pl };
   return { txt: `آخر مرة: ${lastTxt}. نفس الوزن <b>${fmt(top, 2)} كجم</b> وحاول تزوّد عدة في كل مجموعة.`, w: top };
 }
 
@@ -460,6 +477,10 @@ async function scheduleReminders() {
       if (dt === 'lecture') add(4, at(d, 16, 0), 'النهارده محاضرة 🎓', 'العشا: العلبة من البيت، أو الطبق الذكي (نص رز، من غير طرب)، أو السوري بملعقة توم واحدة.');
       if (tr) add(5, at(d, 18, 45), `تمرين النهارده: ${tr.title} 💪`, tr.sub);
       if (dt === 'mom') add(6, at(d, 12, 0), 'جمعة ماما 😄', 'البروتين الأول، طبق واحد مليان، حتة حلو واحدة. ومتصومش بكرة.');
+      if (dow === 5) add(15, at(d, 19, 30), 'تشيك إن الأسبوع ✍️', '30 ثانية: طاقة، جوع، نوم، ضغط، مزاج + الوسط.');
+      if (ghOn()) add(16, at(d, 7, 50), '🧢 رسالة الكابتن', 'مراجعة امبارح جاهزة – افتح التطبيق.');
+      if (tr && S.settings.gym && !sessDone(weekOf(d), tr.key) && diffDays(d, S.settings.start) >= 0) add(17, at(d, 20, 30), 'لسه موصلتش الجيم؟', '45 دقيقة من التمرين أحسن من صفر – ابدأ بالتمارين الأساسية.');
+      if (S.shop && d === addDays(S.shop.start, 12)) add(18, at(d, 18, 0), '🛒 لستة السوبر ماركت', 'الأكل هيخلص بعد يومين – افتح الأكل واعمل لستة جديدة.');
       if (dow === 5) add(7, at(d, 20, 0), 'تقرير الأسبوع 📋', 'افتح التقدّم واضغط "ابعت تقرير الأسبوع للكابتن" – بيفتح Claude والتقرير جاهز.');
       { const ds = photoDates(); const due = ds.length ? addDays(ds[ds.length - 1], 28) : S.settings.start; if (d === due || (i === 0 && photoDue() && dow === 6)) add(10, at(d, 7, 0), 'صور التقدّم 📸', 'قدام، جنب، ضهر – نفس المكان والإضاءة. قبل الفطار.'); }
       const next = parseISO(addDays(d, 1)).getDay();
@@ -685,6 +706,343 @@ async function gainSheet() {
     const gx = $('#gReset', p); if (gx) gx.onclick = async () => { try { await Zepp.resetGain(); } catch (e) { } closeSheet(); toast('اتمسحت'); };
   });
 }
+/* ================= تشيك إن الجمعة ================= */
+const CHECK_Q = [['energy', 'الطاقة طول الأسبوع', ['😴 واقعة', 'قليلة', 'عادي', 'كويسة', '⚡ عالية']], ['hunger', 'الجوع', ['مش جعان', 'خفيف', 'عادي', 'جعان', '🔥 جعان جداً']], ['sleepQ', 'جودة النوم', ['وحشة جداً', 'وحشة', 'عادي', 'كويسة', 'ممتازة']], ['stress', 'ضغط الشغل والمذاكرة', ['هادي', 'خفيف', 'متوسط', 'عالي', '🤯 فوق طاقتي']], ['mood', 'المزاج', ['😞', '😕', '😐', '🙂', '😁']]];
+const checkinThisWeek = () => { for (let i = 0; i < 7; i++) { const d = addDays(today(), -i); if (S.checkins[d]) return d; } return null; };
+function checkinSheet() {
+  const d = today(), c = Object.assign({}, S.checkins[d] || {});
+  openSheet(sheetHead('تشيك إن الأسبوع', '30 ثانية – الكابتن بيقرا ده') + CHECK_Q.map(([k, t, opts]) => `<div class="field"><span>${t}</span><div class="grid3" style="grid-template-columns:repeat(5,1fr);gap:6px">${opts.map((o, i) => `<button class="chip" data-ck="${k}" data-v="${i + 1}" style="justify-content:center;white-space:normal;text-align:center;padding:8px 4px;${c[k] === i + 1 ? 'background:var(--red);color:#fff' : ''}">${o}</button>`).join('')}</div></div>`).join('')
+    + `<label class="field"><span>مقاس الوسط عند السرّة (سم) – الصبح قبل الأكل</span><input id="ckW" class="inp num" inputmode="decimal" value="${c.waist ?? ''}"></label>
+    <label class="field"><span>أي حاجة تحب تقولها للكابتن</span><textarea id="ckN" class="inp">${esc(c.note || '')}</textarea></label>
+    <button class="btn red block mt" id="ckSave">حفظ</button>`, p => {
+    p.querySelectorAll('[data-ck]').forEach(b => b.onclick = () => { c[b.dataset.ck] = +b.dataset.v; p.querySelectorAll(`[data-ck="${b.dataset.ck}"]`).forEach(x => { const on = x === b; x.style.background = on ? 'var(--red)' : ''; x.style.color = on ? '#fff' : ''; }); });
+    $('#ckSave', p).onclick = () => {
+      const w = parseFloat($('#ckW', p).value.replace(',', '.')); if (!isNaN(w) && w > 40) { c.waist = w; (S.body[d] = S.body[d] || {}).waist = w; }
+      c.note = $('#ckN', p).value.trim() || undefined;
+      if (CHECK_Q.some(([k]) => !c[k])) { toast('جاوب الخمس أسئلة'); return; }
+      S.checkins[d] = c; if (c.note) S.inbox.push({ t: Date.now(), text: 'تشيك إن: ' + c.note });
+      save(); ghSoon(3000); closeSheet(); render(); toast('اتسجّل ✓ – ابعت التقرير دلوقتي');
+    };
+  });
+}
+
+/* ================= قول للكابتن ================= */
+function sayCoachSheet() {
+  const recent = S.inbox.slice(-5).reverse();
+  openSheet(sheetHead('قول للكابتن', 'بيوصلني في مراجعة الصبح') + `<textarea id="scT" class="inp mt" style="height:110px" placeholder="مثلاً: الكوع وجعني في الهامر · عندي امتحان الأسبوع ده · الجيم زحمة"></textarea>
+    <button class="btn red block mt" id="scGo">ابعت</button>
+    ${recent.length ? `<div class="section-t">اللي بعته</div>${recent.map(m => `<div class="hrow"><span class="d num">${new Date(m.t).toLocaleDateString('ar-EG', { day: 'numeric', month: 'short' })}</span><span class="v" style="font-weight:500">${esc(m.text)}<small>${m.sent ? '✓ وصل' : 'مستني المزامنة'}</small></span></div>`).join('')}` : ''}
+    ${!ghOn() ? '<p class="muted small mt">المراجعة اليومية مش متفعّلة لسه – الرسايل هتتحفظ وتوصل أول ما تفعّلها.</p>' : ''}`, p => {
+    $('#scGo', p).onclick = () => { const t = $('#scT', p).value.trim(); if (!t) return; S.inbox.push({ t: Date.now(), text: t }); save(); ghSoon(2000); closeSheet(); toast('اتبعت ✓ – هرد عليك الصبح'); };
+  });
+}
+
+/* ================= صور الأكل ================= */
+async function addMealPhoto(d, meal, file) {
+  const b = await shrink(file); const key = `meal|${d}|${meal}|${Date.now()}`;
+  await pPut(key, b); (S.mealPhotos[d] = S.mealPhotos[d] || []).push({ key, meal }); save(); ghSoon(5000);
+}
+
+/* ================= المراجعة اليومية (مستودع GitHub خاص) ================= */
+const GH_TOKEN_KEY = 'lifestyle.ghToken';
+const ghToken = () => { try { return localStorage.getItem(GH_TOKEN_KEY) || ''; } catch (e) { return ''; } };
+const ghOn = () => !!(ghToken() && S.settings.ghRepo);
+const b64 = str => btoa(unescape(encodeURIComponent(str)));
+const unb64 = str => decodeURIComponent(escape(atob(str.replace(/\n/g, ''))));
+async function gh(method, path, body) {
+  const r = await fetch(`https://api.github.com/repos/${S.settings.ghRepo}/contents/${path}`, { method, headers: { Authorization: 'Bearer ' + ghToken(), Accept: 'application/vnd.github+json' }, body: body ? JSON.stringify(body) : undefined });
+  if (r.status === 404 && method === 'GET') return null;
+  if (!r.ok) { const t = await r.text().catch(() => ''); throw new Error(`GitHub ${r.status}${r.status === 401 ? ' – المفتاح غلط أو خلص' : r.status === 404 ? ' – المستودع مش موجود أو المفتاح مش شايفه' : ''} ${t.slice(0, 80)}`); }
+  return r.json();
+}
+async function ghPut(path, contentB64, msg) {
+  const cur = await gh('GET', path).catch(() => null);
+  return gh('PUT', path, { message: msg, content: contentB64, sha: cur && cur.sha });
+}
+let ghT = null, ghBusy = false;
+function ghSoon(ms = 60000) { try { if (!ghOn()) return; clearTimeout(ghT); ghT = setTimeout(() => ghSync(), ms); } catch (e) { } }
+function dailySummary(d) {
+  const e = eff(d), x = S.days[d] || {}, b = S.body[d];
+  const ses = Object.entries(S.logs).filter(([, s]) => s.date === d && Object.values(s.ex).some(a => a.length));
+  return { date: d, type: dayType(d), weight: e.w, steps: e.steps, active: e.active, burnEst: e.kcal, sleepMin: e.sleep, creatine: e.creatine, water: e.water, feel: x.feel,
+    meals: x.meals || {}, recipes: x.recipes || null, choice: x.choice, extras: x.extras || [], intake: intake(d), note: x.note, body: b || null,
+    readiness: readiness(d).level, photos: (S.mealPhotos[d] || []).map(m => ({ meal: m.meal, file: `photos/meals/${m.key.replace(/\|/g, '_')}.jpg` })),
+    sessions: ses.map(([k, s]) => ({ key: k, rpe: s.rpe, pain: s.painAreas, note: s.note, ex: Object.fromEntries(Object.entries(s.ex).map(([lk, a]) => [lk, a.map(z => [z.w, z.r, z.rir, z.p])])) })) };
+}
+async function ghSync(loud) {
+  if (!ghOn() || ghBusy) return;
+  ghBusy = true;
+  try {
+    // 1) الحالة كاملة (من غير الصور والمفتاح)
+    const state = Object.assign({}, S, { active: null });
+    await ghPut('data/state.json', b64(JSON.stringify(state)), 'state ' + today());
+    // 2) ملخص آخر 14 يوم مقروء
+    const days = []; for (let i = 13; i >= 0; i--) days.push(dailySummary(addDays(today(), -i)));
+    await ghPut('data/last14.json', b64(JSON.stringify({ generated: new Date().toISOString(), settings: S.settings, program: { week: curWeek(), busy: isBusy(curWeek()), adherence: adherence(curWeek()), streak: adherenceStreak() }, checkins: S.checkins, inbox: S.inbox.filter(m => !m.sent), days }, null, 1)), 'daily ' + today());
+    S.inbox.forEach(m => m.sent = true);
+    // 3) صور الأكل الجديدة
+    S.ghUp = S.ghUp || {};
+    for (const list of Object.values(S.mealPhotos)) for (const m of list) {
+      if (S.ghUp[m.key]) continue; const bl = await pGet(m.key); if (!bl) continue;
+      const data = (await blobToData(bl)).split(',')[1];
+      await ghPut(`photos/meals/${m.key.replace(/\|/g, '_')}.jpg`, data, 'meal photo'); S.ghUp[m.key] = 1;
+    }
+    // 4) وصفات زيادة من الكابتن
+    const rf = await gh('GET', 'coach/recipes.json').catch(() => null);
+    if (rf && rf.content) { try { const rs = JSON.parse(unb64(rf.content)); if (Array.isArray(rs)) S.coach.recipes = rs; } catch (e) { } }
+    // 5) رسايل الكابتن
+    const f = await gh('GET', 'coach/messages.json');
+    if (f && f.content) { const msgs = JSON.parse(unb64(f.content)); if (Array.isArray(msgs)) { const old = (S.coach.msgs || []).length; S.coach.msgs = msgs.slice(-60); if (msgs.length > old && S.coach.seen !== msgs[msgs.length - 1].date) S.coach.unread = true; } }
+    S.settings.ghLast = Date.now(); save(true); if (loud) toast('اتزامن ✓');
+  } catch (e) { S.settings.ghErr = String(e.message || e); save(true); if (loud) toast(S.settings.ghErr); }
+  finally { ghBusy = false; if ($('#player').hidden && $('#sheet').hidden) render(); }
+}
+function coachMsgCard() {
+  const msgs = S.coach.msgs || []; if (!msgs.length) return '';
+  const m = msgs[msgs.length - 1];
+  return `<button class="verdict ${S.coach.unread ? 'ok' : 'info'}" id="coachMsg" style="display:block;width:100%;text-align:start;margin-top:12px"><h3>🧢 رسالة الكابتن ${S.coach.unread ? '· جديدة' : ''}</h3><p><b>${esc(m.title || '')}</b> ${esc((m.body || '').slice(0, 140))}${(m.body || '').length > 140 ? '…' : ''}</p><small class="muted">${esc(m.date || '')}</small></button>`;
+}
+function coachMsgsSheet() {
+  const msgs = (S.coach.msgs || []).slice().reverse();
+  S.coach.unread = false; if (msgs[0]) S.coach.seen = msgs[0].date; save();
+  openSheet(sheetHead('رسايل الكابتن') + msgs.slice(0, 20).map((m, i) => `<div class="card pad mt"><small class="muted">${esc(m.date || '')}</small><h3 style="margin:4px 0 8px">${esc(m.title || '')}</h3><p style="line-height:1.8;margin:0;white-space:pre-wrap">${esc(m.body || '')}</p>
+    ${m.apply && !m.applied ? `<button class="btn red block mt sm" data-apply="${msgs.length - 1 - i}">طبّق التعديل: ${esc(m.apply.label || '')}</button>` : m.applied ? '<p class="up small" style="margin:8px 0 0">✓ اتطبّق</p>' : ''}</div>`).join('')
+    + `<button class="btn ghost block mt" id="cmSay">رد على الكابتن</button>`, p => {
+    p.querySelectorAll('[data-apply]').forEach(b => b.onclick = () => {
+      const m = S.coach.msgs[+b.dataset.apply], a = m.apply || {};
+      if (a.kcalDelta) { S.settings.kcal = Math.round(S.settings.kcal + a.kcalDelta); S.settings.riceAdj = riceAdj() + Math.round(a.kcalDelta / 1.3); }
+      if (a.steps) S.settings.steps = a.steps;
+      if (a.repOverride) Object.assign(S.repOverride, a.repOverride);
+      if (a.swaps) Object.assign(S.swaps, a.swaps);
+      if (a.busyWeek) { S.busy = S.busy || {}; S.busy[curWeek()] = 'coach'; }
+      m.applied = true; S.inbox.push({ t: Date.now(), text: `✓ طبّقت: ${a.label || ''}` }); save(); ghSoon(3000); closeSheet(); render(); toast('اتطبّق ✓');
+    });
+    $('#cmSay', p).onclick = () => { closeSheet(); sayCoachSheet(); };
+  });
+}
+function ghSheet() {
+  const on = ghOn();
+  openSheet(sheetHead('المراجعة اليومية مع الكابتن', 'مستودع GitHub خاص بيك') + `
+    ${on ? `<div class="verdict ${S.settings.ghErr && (!S.settings.ghLast || S.settings.ghErr) ? 'warn' : 'ok'}"><h3>${S.settings.ghLast ? '✓ شغالة' : 'مستني أول مزامنة'}</h3><p>${esc(S.settings.ghRepo)}${S.settings.ghLast ? ` · آخر مزامنة ${new Date(S.settings.ghLast).toLocaleString('ar-EG', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}` : ''}${S.settings.ghErr ? `<br><small>${esc(S.settings.ghErr)}</small>` : ''}</p></div>` : ''}
+    <p style="line-height:1.8">كل يوم التطبيق يرفع ملخص يومك على مستودع <b>خاص</b> (Private) بتاعك، والكابتن يراجعه الصبح ويبعتلك رسالة. الصور الشخصية (صور التقدّم) مش بتترفع – صور الأكل بس.</p>
+    <label class="field"><span>اسم المستودع</span><input id="ghR" class="inp" style="font-size:16px;direction:ltr" value="${esc(S.settings.ghRepo || 'archyoko/lifestyle-data')}"></label>
+    <label class="field"><span>المفتاح (Token)</span><input id="ghK" class="inp" style="font-size:14px;direction:ltr" type="password" placeholder="${ghToken() ? '•••••••• محفوظ' : 'github_pat_...'}"></label>
+    <p class="muted small">المفتاح بيتحفظ على الموبايل ده بس، ومش بيدخل في نسخة Drive.</p>
+    <button class="btn red block mt" id="ghSave">${on ? 'حفظ وزامن دلوقتي' : 'فعّل'}</button>
+    ${on ? '<button class="btn ghost block mt sm" id="ghOff">وقّف المزامنة</button>' : ''}`, p => {
+    $('#ghSave', p).onclick = async () => {
+      const r = $('#ghR', p).value.trim().replace(/^https?:\/\/github.com\//, ''), k = $('#ghK', p).value.trim();
+      if (!/^[\w.-]+\/[\w.-]+$/.test(r)) { toast('اسم المستودع لازم يبقى زي archyoko/lifestyle-data'); return; }
+      S.settings.ghRepo = r; if (k) { try { localStorage.setItem(GH_TOKEN_KEY, k); } catch (e) { } }
+      if (!ghToken()) { toast('حط المفتاح'); return; }
+      S.settings.ghErr = ''; save(); closeSheet(); toast('بيزامن…'); await ghSync(true); scheduleReminders(); ghSheet();
+    };
+    const off = $('#ghOff', p); if (off) off.onclick = () => { try { localStorage.removeItem(GH_TOKEN_KEY); } catch (e) { } S.settings.ghRepo = ''; save(); closeSheet(); render(); toast('اتوقفت'); };
+  });
+}
+
+/* ================= لستة السوبر ماركت (أسبوعين) ================= */
+function shopCompute(start) {
+  const tot = {}; // key → {name, g, f, pack, each, packEach, note, cooked}
+  const addItem = (it) => {
+    let def = SHOP[it.id];
+    if (it.swapped) def = SHOP_ALT[it.name] || { name: it.name, f: 1 };
+    if (!def) return;
+    const key = def.merge || def.name;
+    const o = (tot[key] = tot[key] || Object.assign({ name: def.name, g: 0, cooked: 0 }, def));
+    o.g += it.g * def.f; o.cooked += it.g;
+  };
+  for (let i = 0; i < 14; i++) {
+    const d = addDays(start, i);
+    for (const m of mealsFor(d)) {
+      if (m.special) { if (m.special === 'lecture' && m.pick === 'box' && S.settings.lectureBox !== false) m.boxItems.forEach(addItem); continue; }
+      m.items.forEach(addItem);
+    }
+  }
+  return Object.values(tot).filter(o => o.g > 0).map(o => {
+    let qty, sub = '';
+    if (o.each) { const n = Math.ceil(o.g / o.each); qty = `${n} ${o.name === 'بيض' ? 'بيضة' : 'حتة'}`; if (o.packEach && o.packEach[0] > 1) sub = `≈ ${Math.ceil(n / o.packEach[0])} ${o.packEach[1]}`; }
+    else { const kg = o.g / 1000; qty = kg >= 1 ? `${fmt(Math.ceil(kg * 10) / 10, 1)} كجم` : `${Math.ceil(o.g / 50) * 50} جم`; if (o.pack) sub = `≈ ${Math.ceil(o.g / o.pack[0])} ${o.pack[1]} (${o.pack[0] >= 1000 ? o.pack[0] / 1000 + ' كجم' : o.pack[0] + ' جم'})`; }
+    const cookedTxt = Math.abs(o.f - 1) > 0.05 ? `في الأكل: ${o.cooked >= 1000 ? fmt(o.cooked / 1000, 1) + ' كجم' : Math.round(o.cooked) + ' جم'} ${o.f < 1 ? 'مسلوق' : 'مطبوخ'}` : '';
+    return { id: o.name, name: o.name, qty, sub, cookedTxt, note: o.note || '' };
+  }).sort((a, b) => a.name.localeCompare(b.name, 'ar'));
+}
+function shopState() {
+  if (!S.shop) S.shop = { start: today(), bought: {} };
+  return S.shop;
+}
+function shopCard() {
+  const sh = shopState(); const list = shopCompute(sh.start);
+  const done = list.filter(x => sh.bought[x.id]).length, end = addDays(sh.start, 13), left = diffDays(end, today());
+  return `<div class="card mt"><div class="meal-h"><div><h3>🛒 لستة الأسبوعين</h3><small>${short(sh.start)} → ${short(end)} · اشتريت <span class="num">${done}/${list.length}</span>${left < 0 ? ' · <b class="down">خلصت – اعمل لستة جديدة</b>' : left <= 2 ? ` · <b class="down">فاضل ${left + 1} يوم</b>` : ''}</small></div><button class="sq black" id="shopOpen" aria-label="افتح">${ICON.arrowL}</button></div>
+    <div class="bar ok" style="margin:0 16px 14px"><i style="width:${list.length ? done / list.length * 100 : 0}%"></i></div></div>`;
+}
+function shopSheet() {
+  const sh = shopState(); const list = shopCompute(sh.start);
+  openSheet(sheetHead('لستة السوبر ماركت', `${nice(sh.start)} → ${nice(addDays(sh.start, 13))}`) + `
+    <p class="muted small" style="line-height:1.7">الكميات <b>ني وناشف</b> زي ما هتشتريها – محسوبة من خطة الأسبوعين (بالبدايل اللي مختارها، وأيام المحاضرة وجمعة ماما). اللي في الخطة مطبوخ مكتوب تحته.</p>
+    ${list.map(x => `<button class="item" style="width:100%;text-align:start" data-buy="${esc(x.id)}"><span class="food-ic" style="${sh.bought[x.id] ? 'background:var(--ok);color:#fff' : ''}">${sh.bought[x.id] ? '✓' : ''}</span><div><b style="${sh.bought[x.id] ? 'text-decoration:line-through;opacity:.6' : ''}">${esc(x.name)}: <bdi class="num">${x.qty}</bdi></b><small>${[x.sub, x.cookedTxt].filter(Boolean).join(' · ')}</small>${x.note ? `<br><small class="muted">${esc(x.note)}</small>` : ''}${sh.bought[x.id] ? `<div class="swapped" style="color:var(--ok)">اشتريته ${short(sh.bought[x.id])}</div>` : ''}</div></button>`).join('')}
+    <label class="field" style="display:flex;align-items:center;gap:10px"><input type="checkbox" id="lecBox" ${S.settings.lectureBox !== false ? 'checked' : ''} style="width:22px;height:22px"><span style="margin:0">احسب علبة العشا لأيام المحاضرة</span></label>
+    <div class="grid2 mt"><button class="btn ghost sm" id="shAll">علّم الكل اتشرى النهارده</button><button class="btn ghost sm" id="shCopy">انسخ اللستة</button></div>
+    <button class="btn red block mt" id="shNew">ابدأ لستة جديدة من النهارده</button>`, p => {
+    p.querySelectorAll('[data-buy]').forEach(b => b.onclick = () => { const id = b.dataset.buy; if (sh.bought[id]) delete sh.bought[id]; else sh.bought[id] = today(); save(); closeSheet(); shopSheet(); render(); });
+    $('#lecBox', p).onchange = e => { S.settings.lectureBox = e.target.checked; save(); closeSheet(); shopSheet(); };
+    $('#shAll', p).onclick = () => { list.forEach(x => { if (!sh.bought[x.id]) sh.bought[x.id] = today(); }); save(); closeSheet(); render(); toast('اتعلّم ✓'); };
+    $('#shCopy', p).onclick = () => copyText(`🛒 لستة ${short(sh.start)} → ${short(addDays(sh.start, 13))}\n` + list.filter(x => !sh.bought[x.id]).map(x => `- ${x.name}: ${x.qty}${x.sub ? ' (' + x.sub + ')' : ''}`).join('\n'));
+    $('#shNew', p).onclick = e => { const btn = e.currentTarget; if (!btn.dataset.sure) { btn.dataset.sure = 1; btn.textContent = 'متأكد؟ اضغط تاني'; return; } S.shop = { start: today(), bought: {} }; save(); closeSheet(); shopSheet(); render(); };
+  });
+}
+
+/* ================= التسخين ================= */
+const warmKind = dk => dk.startsWith('lower') ? 'lower' : 'upper';
+function rampFor(w, dk) {
+  const list = exList(dk, w); const ex = list.find(e => e.kind === 'main' && !isTimed(e)); if (!ex) return null;
+  const h = history(ex.lk); const top = h.length ? Math.max(...h.filter(x => x.date === h[0].date).map(x => +x.w || 0)) : 0;
+  const inc = ex.inc || 2.5, rnd = x => Math.max(inc, Math.round(x / inc) * inc);
+  return { ex, sets: WARMUP.ramp.map(([f, r]) => ({ w: top ? rnd(top * f) : null, r, f })) };
+}
+function warmSheet(w, dk, onDone) {
+  const wk = WARMUP[warmKind(dk)], rp = rampFor(w, dk), done = new Set();
+  openSheet(sheetHead('🔥 التسخين قبل التمرين', `${dayByKey(dk).title} · ${wk.time}`) + `
+    <p class="muted small" style="line-height:1.7">${esc(wk.why)}</p>
+    ${wk.steps.map((st, i) => `<button class="item" style="width:100%;text-align:start" data-wu="${i}"><span class="food-ic">${i + 1}</span><div><b>${esc(st.t)} – <bdi class="num">${esc(st.d)}</bdi></b><small style="line-height:1.7">${esc(st.how)}</small></div></button>`).join('')}
+    ${rp ? `<div class="card pad mt"><h3 style="margin:0 0 6px">مجموعات تسخين قبل ${esc(rp.ex.name)}</h3>
+      <p class="small muted" style="margin:0 0 10px;line-height:1.7">بوزن خفيف ومتصاعد، راحة دقيقة بينهم، ومتتسجّلش. الهدف إن المفصل يحس بالحركة قبل الوزن التقيل.</p>
+      ${rp.sets.map(x => `<div class="hrow"><span class="d num">${Math.round(x.f * 100)}%</span><span class="v">${x.w ? `<bdi class="num">${fmt(x.w, 2)} كجم × ${x.r}</bdi>` : `${x.f < 0.6 ? 'خفيف جداً' : x.f < 0.8 ? 'متوسط' : 'قريب من وزن الشغل'} × ${x.r}`}</span></div>`).join('')}
+      <p class="small" style="margin:10px 0 0;line-height:1.7">وأول تمرين لعضلة جديدة بعد كده: مجموعة واحدة خفيفة 60% × 6 قبله.</p></div>` : ''}
+    <div class="verdict warn mt"><p style="margin:0">${esc(WARMUP.rule)}</p></div>
+    ${onDone ? `<button class="btn red block mt" id="wuGo">خلصت التسخين – ابدأ</button><button class="link small" id="wuSkip" style="display:block;margin:12px auto 0">سخّنت لوحدي – ابدأ على طول</button>` : '<button class="btn ghost block mt" data-close>تمام</button>'}`, p => {
+    p.querySelectorAll('[data-wu]').forEach(b => b.onclick = () => { const i = b.dataset.wu; done.has(i) ? done.delete(i) : done.add(i); const ic = $('.food-ic', b); ic.textContent = done.has(i) ? '✓' : +i + 1; ic.style.background = done.has(i) ? 'var(--ok)' : ''; ic.style.color = done.has(i) ? '#fff' : ''; });
+    const go = $('#wuGo', p); if (go) go.onclick = () => { ensureSess(w, dk).warm = done.size || 1; save(); closeSheet(); onDone(); };
+    const sk = $('#wuSkip', p); if (sk) sk.onclick = () => { ensureSess(w, dk).warm = 'self'; save(); closeSheet(); onDone(); };
+  });
+}
+
+/* ================= الوصفات على قد سعراتك ================= */
+const allRecipes = () => RECIPES.concat((S.coach.recipes || []).map(r => Object.assign({ cat: 'من الكابتن' }, r)));
+const ingOf = e => e.length >= 4 ? { name: e[0], k: e[1], p: e[2], g: e[3] } : (ING[e[0]] ? { key: e[0], name: ING[e[0]][0], k: ING[e[0]][1], p: ING[e[0]][2], g: e[1] } : null);
+function mealTarget(mid, d) {
+  const m = mealsFor(d).find(x => x.id === mid);
+  if (m && !m.special) return { kcal: m.kcal, p: m.p, title: m.title };
+  const base = DIET.meals.find(x => x.id === mid), its = mealItems(base);
+  return { kcal: its.reduce((a, x) => a + x.kcal, 0), p: its.reduce((a, x) => a + x.p, 0), title: base.title };
+}
+/* بروتين أول: مصادر البروتين تتظبط على بروتين الوجبة، والباقي يكمّل السعرات */
+function scaleRecipe(r, T, Pt) {
+  const ings = r.ing.map(ingOf).filter(Boolean);
+  const isP = x => x.k > 0 && x.p * 4 / x.k >= 0.45;
+  const sum = (arr, f) => arr.reduce((a, x) => a + f(x), 0);
+  const P = ings.filter(isP), O = ings.filter(x => !isP(x));
+  const kP = sum(P, x => x.k * x.g / 100), pP = sum(P, x => x.p * x.g / 100), kO = sum(O, x => x.k * x.g / 100), pO = sum(O, x => x.p * x.g / 100);
+  const cl = (x, a, b) => Math.min(b, Math.max(a, x));
+  let a = 1, b = 1;
+  const det = kP * pO - kO * pP;
+  if (P.length && O.length && Math.abs(det) > 1e-6) { a = (T * pO - kO * Pt) / det; b = (kP * Pt - T * pP) / det; }
+  else { a = b = T / (kP + kO); }
+  a = cl(a, 0.6, 2); if (O.length) b = cl((T - a * kP) / kO, 0.35, 2.6); else a = cl(T / kP, 0.5, 2);
+  const out = ings.map(x => { const f = isP(x) ? a : b; let g = x.g * f; g = x.key === 'oil' || x.key === 'butter' || x.key === 'honey' || x.g < 20 ? Math.max(1, Math.round(g)) : Math.max(5, Math.round(g / 5) * 5); if (x.key === 'egg') g = Math.max(50, Math.round(g / 50) * 50); return Object.assign({}, x, { g }); });
+  const kcal = Math.round(sum(out, x => x.k * x.g / 100)), p = Math.round(sum(out, x => x.p * x.g / 100));
+  return { out, kcal, p, short: Pt - p };
+}
+function recipesSheet(mid) {
+  const d = view.food || today(); let cat = 'الكل', q = '';
+  const draw = () => {
+    const rs = allRecipes().filter(r => (cat === 'الكل' || r.cat === cat) && (!q || r.name.includes(q)));
+    const cats = ['الكل', ...new Set(allRecipes().map(r => r.cat))];
+    openSheet(sheetHead('📖 وصفات على قد سعراتك', 'اختار أكلة والمقادير تتحسب على الوجبة اللي هتاكلها مكانها') + `
+      <input id="rcQ" class="inp mt" style="font-size:16px" placeholder="دوّر… بشاميل، بيتزا، كشري" value="${esc(q)}">
+      <div class="chips">${cats.map(c => `<button class="chip ${c === cat ? 'red' : ''}" data-rc="${esc(c)}">${esc(c)}</button>`).join('')}</div>
+      ${rs.map(r => { const t = mealTarget(mid || r.meal, d); return `<button class="item" style="width:100%;text-align:start" data-r="${esc(r.id)}"><span class="food-ic">${esc(r.name[0])}</span><div><b>${esc(r.name)}</b><small>${esc(r.cat)} · مكان ${esc(t.title)} · <span class="num">${t.kcal}</span> سعر</small></div></button>`; }).join('') || '<p class="muted mt">مفيش – اطلبها من الكابتن تحت.</p>'}
+      <button class="btn ghost block mt" id="rcAsk">💬 عايز أكلة مش موجودة؟ اطلبها</button>`, p => {
+      const qi = $('#rcQ', p); qi.oninput = () => { q = qi.value.trim(); clearTimeout(qi._t); qi._t = setTimeout(() => { draw(); const n = $('#rcQ'); n.focus(); n.setSelectionRange(n.value.length, n.value.length); }, 350); };
+      p.querySelectorAll('[data-rc]').forEach(b => b.onclick = () => { cat = b.dataset.rc; draw(); });
+      p.querySelectorAll('[data-r]').forEach(b => b.onclick = () => recipeSheet(allRecipes().find(r => r.id === b.dataset.r), mid));
+      $('#rcAsk', p).onclick = () => { closeSheet(); sayCoachSheet(); setTimeout(() => { const t = $('#scT'); if (t) t.value = 'عايز وصفة دايت لـ: '; }, 50); };
+    });
+  };
+  draw();
+}
+function recipeSheet(r, mid0) {
+  const d = view.food || today(); let mid = mid0 || r.meal, custom = null;
+  const draw = () => {
+    const t = custom ? { kcal: custom, p: Math.round(custom * 0.3 / 4), title: 'وجبة مخصوصة' } : mealTarget(mid, d);
+    const sc = scaleRecipe(r, t.kcal, t.p);
+    openSheet(sheetHead(esc(r.name), `${esc(r.cat)} · ${t.title}`) + `
+      <div class="chips">${DIET.meals.map(m => `<button class="chip ${!custom && m.id === mid ? 'red' : ''}" data-rm="${m.id}">مكان ${esc(m.title)}</button>`).join('')}<button class="chip ${custom ? 'red' : ''}" id="rmC">سعرات تانية</button></div>
+      <div class="tiles mt"><div class="tile"><small>السعرات</small><b class="num">${sc.kcal}</b><span class="muted small">الهدف ${t.kcal}</span></div><div class="tile"><small>البروتين</small><b class="num">${sc.p} جم</b><span class="muted small">الهدف ${t.p}</span></div></div>
+      ${sc.short > 12 ? `<div class="verdict info mt"><p style="margin:0">البروتين ناقص ~${sc.short} جم – كمّل بـ <b>${Math.round(sc.short / 10 * 100 / 5) * 5} جم زبادي يوناني</b> أو <b>${Math.round(sc.short / 12 * 100 / 10) * 10} جم قريش</b> على جنب (وشيل نفس سعراتهم من الأكلة لو عايز تكون مظبوط).</p></div>` : ''}
+      <div class="section-t">المقادير (وزن ني/ناشف قبل الطبخ)</div>
+      ${sc.out.map(x => `<div class="hrow"><span class="v" style="font-weight:600">${esc(x.name)}</span><span class="d num"><bdi>${x.key === 'egg' ? `${x.g / 50} بيضة` : x.g + ' جم'}</bdi></span></div>`).join('')}
+      <p class="muted small">+ ملح وتوابل وخضرة براحتك (سعراتها ملهاش لازمة).</p>
+      <div class="section-t">الطريقة</div>
+      <ol style="line-height:1.9;padding-inline-start:20px;margin:0">${r.steps.map(x => `<li>${esc(x)}</li>`).join('')}</ol>
+      ${r.tip ? `<div class="note mt"><span class="i">i</span><span class="lbl">ليه كده</span><span>${esc(r.tip)}</span></div>` : ''}
+      ${custom ? '' : `<button class="btn red block mt" id="rcUse">هاكلها مكان ${esc(t.title)} ${d === today() ? 'النهارده' : short(d)}</button>`}
+      <button class="btn ghost block mt sm" id="rcBack">كل الوصفات</button>`, p => {
+      p.querySelectorAll('[data-rm]').forEach(b => b.onclick = () => { mid = b.dataset.rm; custom = null; draw(); });
+      const rmc = $('#rmC', p); rmc.onclick = () => { rmc.outerHTML = `<input id="rmCi" class="inp num" inputmode="numeric" style="width:120px;height:40px;font-size:16px" placeholder="مثلاً 600">`; const i = $('#rmCi'); i.focus(); i.onchange = () => { const v = parseInt(i.value, 10); if (v >= 150 && v <= 2500) { custom = v; draw(); } }; };
+      const u = $('#rcUse', p); if (u) u.onclick = () => { const x = (S.days[d] = S.days[d] || {}); (x.recipes = x.recipes || {})[mid] = { id: r.id, name: r.name, kcal: sc.kcal, p: sc.p }; save(); closeSheet(); render(); toast('اتسجّلت ✓ – علّم على الوجبة لما تاكلها'); };
+      $('#rcBack', p).onclick = () => recipesSheet(mid0);
+    });
+  };
+  draw();
+}
+
+/* ================= مكان الجيم ================= */
+function getPos() { return new Promise((res, rej) => { if (!navigator.geolocation) return rej(new Error('الموقع مش متاح')); navigator.geolocation.getCurrentPosition(p => res(p.coords), e => rej(e), { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 }); }); }
+function distM(a, b) { const R = 6371e3, t = x => x * Math.PI / 180; const dl = t(b.lat - a.lat), dn = t(b.lng - a.lng); const h = Math.sin(dl / 2) ** 2 + Math.cos(t(a.lat)) * Math.cos(t(b.lat)) * Math.sin(dn / 2) ** 2; return 2 * R * Math.asin(Math.sqrt(h)); }
+async function gymCheck() {
+  if (!S.settings.gym || !$('#player').hidden) return;
+  const tp = todayPlan(); const ses = tp && (tp.today || (!tp.doneToday && tp.miss)); if (!ses) return;
+  const h = new Date().getHours(); if (h < 16 || h > 23) return;
+  if (S.settings.gymAsked === today()) return;
+  try {
+    const c = await getPos(); const dm = distM({ lat: c.latitude, lng: c.longitude }, S.settings.gym);
+    if (dm < 250) {
+      S.settings.gymAsked = today(); save();
+      openSheet(sheetHead(`وصلت الجيم 💪`, ses.d.label) + `<p style="line-height:1.8">تمرين النهارده <b>${ses.d.title}</b> – ${ses.d.sub}.</p><button class="btn red block mt" id="gStart">ابدأ التمرين</button><button class="btn ghost block mt" data-close>بعدين</button>`, p => {
+        $('#gStart', p).onclick = () => { closeSheet(); view.week = tp.w; view.day = ses.d.key; warmSheet(tp.w, ses.d.key, () => startPlayer(tp.w, ses.d.key)); };
+      });
+    }
+  } catch (e) { }
+}
+function gymSheet() {
+  openSheet(sheetHead('مكان الجيم') + `<p style="line-height:1.8">لما تفتح التطبيق وانت في الجيم في يوم تمرين، تمرين النهارده هيطلعلك على طول. وفي أيام التمرين الساعة 8:30 لو الحصة لسه متعملتش هيفكّرك.</p>
+    ${S.settings.gym ? `<p class="up small">✓ المكان محفوظ</p>` : ''}
+    <button class="btn red block mt" id="gSave">أنا في الجيم دلوقتي – احفظ المكان</button>
+    ${S.settings.gym ? '<button class="btn ghost block mt sm" id="gDel">امسح المكان</button>' : ''}`, p => {
+    $('#gSave', p).onclick = async () => { try { toast('بيحدد المكان…'); const c = await getPos(); S.settings.gym = { lat: c.latitude, lng: c.longitude }; save(); closeSheet(); toast('اتحفظ ✓'); } catch (e) { toast('مقدرتش أحدد المكان – فعّل الموقع واسمح للتطبيق'); } };
+    const gd = $('#gDel', p); if (gd) gd.onclick = () => { delete S.settings.gym; save(); closeSheet(); toast('اتمسح'); };
+  });
+}
+
+/* ================= تقرير الشهر ================= */
+function monthReportSheet() {
+  const t = today(), from = addDays(t, -28);
+  const wA = avgWeight(addDays(from, 6)), wB = avgWeight(t);
+  const bds = Object.keys(S.body).sort(), bIn = bds.filter(d => d >= from), b0 = S.body[bds.filter(d => d <= from).pop() || bIn[0]] || null, b1 = S.body[bds[bds.length - 1]] || null;
+  const waist = d => { for (const x of bds.slice().reverse()) if ((d ? x <= d : true) && S.body[x].waist) return S.body[x].waist; return null; };
+  const str = strengthRows().map(s => ({ name: s.name, ch: s.first ? (s.last - s.first) / s.first * 100 : 0, n: s.n })).filter(s => s.n > 1).sort((a, b) => b.ch - a.ch);
+  const ads = []; for (let w = Math.max(1, curWeek() - 3); w <= curWeek(); w++) { const a = adherence(w); if (a) ads.push(a.score); }
+  const ph = photoDates(); const p0 = ph.filter(d => d <= from).pop() || ph[0], p1 = ph[ph.length - 1];
+  const row = (k, a, b, unit, good) => { const d = a != null && b != null ? r1(b - a) : null; return `<tr><td>${k}</td><td class="num">${a != null ? fmt(a, 1) : '—'}</td><td class="num">${b != null ? fmt(b, 1) : '—'}</td><td>${d != null ? `<b class="${(good === 'down' ? d <= 0 : d >= 0) ? 'up' : 'down'}">${d > 0 ? '+' : ''}${d}${unit}</b>` : '—'}</td></tr>`; };
+  openSheet(sheetHead('تقرير الشهر', `${nice(from)} → ${nice(t)}`) + `
+    <div class="card pad scroll-x mt"><table class="t"><thead><tr><th></th><th>أول الشهر</th><th>دلوقتي</th><th>الفرق</th></tr></thead><tbody>
+      ${row('متوسط الوزن', wA && wA.avg, wB && wB.avg, ' كجم', 'down')}
+      ${row('الوسط', waist(from), waist(), ' سم', 'down')}
+      ${row('الدهون (كجم)', b0 && b0.fatKg, b1 && b1.fatKg, ' كجم', 'down')}
+      ${row('العضل الهيكلي (كجم)', b0 && b0.skmKg, b1 && b1.skmKg, ' كجم', 'up')}
+      ${row('الدهون الحشوية', b0 && b0.visceral, b1 && b1.visceral, '', 'down')}
+    </tbody></table></div>
+    <div class="section-t">الالتزام</div><p style="margin:0 4px">${ads.length ? `متوسط ${Math.round(ads.reduce((a, b) => a + b) / ads.length)}% · ${ads.map(x => x + '%').join(' ← ')}` : '—'}</p>
+    <div class="section-t">القوة</div>${str.length ? `<p style="margin:0 4px;line-height:1.9">${str.slice(0, 5).map(s => `${esc(s.name)} <b class="${s.ch >= 0 ? 'up' : 'down'}">${s.ch >= 0 ? '+' : ''}${fmt(s.ch, 0)}%</b>`).join('<br>')}</p>` : '<p class="muted small">لسه مفيش كفاية حصص.</p>'}
+    ${p0 && p1 && p0 !== p1 ? `<div class="section-t">الصور (${short(p0)} ← ${short(p1)})</div>${POSES.map(([k, n]) => `<div class="grid2" style="margin-bottom:8px">${[p0, p1].map(d => `<div data-ph="${d}|${k}" style="aspect-ratio:3/4;border-radius:12px;overflow:hidden;background:var(--chip);display:grid;place-items:center"></div>`).join('')}</div>`).join('')}` : ''}
+    <button class="btn red block mt" id="mrSend">ابعته للكابتن</button>`, p => {
+    fillPhotos(p);
+    $('#mrSend', p).onclick = async () => { const txt = `# تقرير الشهر – Lifestyle\n${from} → ${t}\n- الوزن: ${wA ? fmt(wA.avg, 2) : '—'} → ${wB ? fmt(wB.avg, 2) : '—'}\n- الوسط: ${waist(from) ?? '—'} → ${waist() ?? '—'}\n- الدهون: ${b0 && b0.fatKg || '—'} → ${b1 && b1.fatKg || '—'} كجم\n- العضل الهيكلي: ${b0 && b0.skmKg || '—'} → ${b1 && b1.skmKg || '—'} كجم\n- الالتزام: ${ads.join('، ')}\n- القوة: ${str.slice(0, 6).map(s => `${s.name} ${fmt(s.ch, 0)}%`).join('، ')}`; if (Zepp && Zepp.shareText) { try { await Zepp.shareText({ text: txt }); return; } catch (e) { } } copyText(txt); };
+  });
+}
+
 function notifSheet() {
   openSheet(sheetHead('الإشعارات') + `
     <p style="line-height:1.8">الكابتن بيفكّرك: الوزن الصبح، الكرياتين، وجبة الشغل، تمرين النهارده، تجهيز العلب، يوم المحاضرة، جمعة ماما، تقرير الجمعة، والنوم. وعداد الراحة بيرن حتى لو الموبايل مقفول.</p>
@@ -801,6 +1159,8 @@ function renderHome(el) {
   ${ad ? `<div class="card pad mt" style="display:flex;gap:14px;align-items:center"><div style="text-align:center;min-width:76px"><b class="num" style="font-size:34px;color:${ad.score >= 80 ? 'var(--ok)' : ad.score >= 60 ? 'var(--warn)' : 'var(--red)'}">${ad.score}%</b><div class="small muted">التزام الأسبوع</div></div>
     <div style="flex:1;min-width:0"><div class="chips" style="margin-top:0">${Object.entries(ad.parts).filter(([, v]) => v != null).map(([k, v]) => `<span class="chip ${v >= .8 ? 'ok' : v < .5 ? 'red' : ''}">${PART[k]}<b class="num">${Math.round(v * 100)}%</b></span>`).join('')}</div>
     <div class="small" style="margin-top:8px">${streak ? `🔥 ${streak} أسبوع ورا بعض فوق 80%` : 'الهدف 80% – أول أسبوع يعدّيها يبدأ السلسلة 🔥'}</div></div></div>` : ''}
+  ${coachMsgCard()}
+  ${new Date().getDay() === 5 && !checkinThisWeek() && tp ? `<button class="verdict warn" style="display:block;width:100%;text-align:start;margin-top:12px" id="ckBan"><h3>تشيك إن الأسبوع ✍️ 30 ثانية</h3><p>طاقة، جوع، نوم، ضغط، مزاج + مقاس الوسط.</p></button>` : ''}
   ${photoDue() && [5, 6].includes(new Date().getDay()) ? `<button class="verdict info" style="display:block;width:100%;text-align:start;margin-top:12px" id="phBan"><h3>ميعاد صور التقدّم 📸</h3><p>قدام، جنب، ضهر – دقيقة واحدة.</p></button>` : ''}
   ${needMorning ? `<button class="verdict warn" style="display:block;width:100%;text-align:start;margin-top:12px" id="morning"><h3>تسجيل الصبح ⏱ 20 ثانية</h3><p>${zeppState.enabled ? 'اتوزن وافتح التفاصيل في OKOK – بيتسجّل لوحده. أو اكتبه هنا.' : 'الوزن + خطوات وسعرات ونوم امبارح من الساعة.'}</p></button>` : ''}
   <div class="tiles mt">
@@ -825,11 +1185,14 @@ function renderHome(el) {
   </div>
   <div class="section-t">رأي الكابتن</div>
   <div class="verdict ${v.cls}"><h3>${v.t}</h3><p>${v.d}</p></div>
-  <button class="btn ghost block mt" id="qLog">تسجيل الصبح / ملاحظة</button>`;
+  <div class="grid2 mt"><button class="btn ghost sm" id="qLog">تسجيل الصبح</button><button class="btn ghost sm" id="qSay">💬 قول للكابتن</button></div>`;
   renderSyncLine();
   $('#tW').onclick = $('#qLog').onclick = () => dayEntrySheet(t);
   const mo = $('#morning'); if (mo) mo.onclick = () => dayEntrySheet(t);
   const pb = $('#phBan'); if (pb) pb.onclick = () => photoSessionSheet();
+  const cm = $('#coachMsg'); if (cm) cm.onclick = coachMsgsSheet;
+  const ck = $('#ckBan'); if (ck) ck.onclick = checkinSheet;
+  $('#qSay').onclick = sayCoachSheet;
   $('#cCr').onclick = () => { day(t).creatine = !day(t).creatine; save(); render(); };
   $('#cWa').onclick = () => { const d = day(t); d.water = r1(((d.water || 0) + 0.25) > set.water + 1 ? 0 : (d.water || 0) + 0.25); save(); render(); };
   $('#cMe').onclick = () => { tab = 'food'; render(); };
@@ -910,6 +1273,7 @@ function renderWorkout(el) {
   ${isBusy(w) && dk === 'lowerA' ? `<p class="small" style="margin:0 4px 12px;color:var(--warn)">+ رفرفة جانبي وفيس بول من LOWER B (أسبوع مزنوق)</p>` : ''}
   ${rd && rd.level !== 'green' ? `<div class="verdict ${rd.level === 'red' ? 'warn' : 'info'}" style="margin-bottom:14px"><h3>${READY_TXT[rd.level][0]}</h3><p>${READY_TXT[rd.level][1]} (${rd.why.join(' · ')}) – المجموعات تحت متظبطة.</p></div>` : ''}
   <button class="link small" id="busyBtn" style="margin:0 4px 12px">${isBusy(w) ? 'رجّع الأسبوع 4 أيام' : 'أسبوع مزنوق؟ خليه 3 أيام'}</button>
+  <button class="verdict info" id="warmBtn" style="display:block;width:100%;text-align:start;margin-bottom:14px"><h3>🔥 التسخين قبل التمرين · ${WARMUP[warmKind(dk)].time}</h3><p>${sess && sess.warm ? '✓ سخّنت' : 'خطوات بالترتيب + مجموعات تسخين قبل أول تمرين تقيل – عشان متتصابش.'}</p></button>
   ${groups.map(g => `<div class="card">${g.length > 1 ? g.map((ex, i) => exHtml(ex, i + 1)).join('') : exHtml(g[0])}
      ${g.length > 1 ? `<div class="note"><span class="i">i</span><span class="lbl">ملاحظة</span><span>${esc(g[0].kind === 'warm' ? 'إحماء ورا بعض من غير راحة طويلة. ' : '')}${esc(g[0].note)}</span></div>` : `<div class="note"><span class="i">i</span><span class="lbl">ملاحظة</span><span>${esc(g[0].note)}</span></div>`}
    </div>`).join('')}
@@ -921,7 +1285,8 @@ function renderWorkout(el) {
   el.querySelectorAll('[data-info]').forEach(b => b.onclick = () => infoSheet(findEx(dk, b.dataset.info)));
   el.querySelectorAll('[data-swap]').forEach(b => b.onclick = () => swapSheet(dk, b.dataset.swap, render));
   el.querySelectorAll('[data-log]').forEach(b => b.onclick = () => logSheet(w, dk, findEx(dk, b.dataset.log), () => render()));
-  $('#startBtn').onclick = () => startPlayer(w, dk);
+  $('#startBtn').onclick = () => { const s0 = S.logs[sessKey(w, dk)]; if (!(s0 && (s0.warm || Object.values(s0.ex).some(a => a.length)))) warmSheet(w, dk, () => startPlayer(w, dk)); else startPlayer(w, dk); };
+  $('#warmBtn').onclick = () => warmSheet(w, dk);
   $('#rulesBtn').onclick = rulesSheet;
   $('#busyBtn').onclick = () => { S.busy = S.busy || {}; if (isBusy(w)) S.busy[w] = false; else S.busy[w] = 'manual'; save(); scheduleReminders(); render(); };
 }
@@ -980,12 +1345,14 @@ function logSheet(w, dk, ex, onSaved, editRef) {
          <div class="quick">${quick.map(q => `<button data-q="${q}"><span class="num">${fmt(q, 2)}</span> كجم</button>`).join('')}</div>`}
     ${ex.rir !== '—' ? `<label class="field"><span>كام عدة كان ممكن تعمل كمان؟ (RIR) – الهدف ${ex.rir}</span></label><div class="rirs">${[0, 1, 2, 3, 4].map(n => `<button data-rir="${n}" class="${+rir === n ? 'on' : ''}">${n}${n === 4 ? '+' : ''}</button>`).join('')}</div>` : ''}
     ${showPain ? `<label class="field"><span>الوجع (0 = مفيش)</span></label><div class="pain">${[0, 1, 2, 3, 4, 6].map(n => `<button data-p="${n}" class="${pain === n ? 'on' : ''} ${n > 3 ? 'hi' : ''}">${n === 6 ? '4+' : n}</button>`).join('')}</div>` : ''}
-    ${sug ? `<div class="sugg">🧢 ${sug.txt}</div>` : ''}
+    ${sug ? `<div class="sugg">🧢 ${sug.txt}${sug.plateau ? `<button class="btn ghost block mt sm" id="plGo">غيّر النطاق لـ ${sug.plateau.next[0]}–${sug.plateau.next[1]}</button>` : ''}${ex.baseReps ? `<button class="link small" id="plReset" style="display:block;margin-top:8px">رجّع النطاق الأصلي ${ex.baseReps[0]}–${ex.baseReps[1]}</button>` : ''}</div>` : ''}
     <button class="btn red block mt" id="lSave">${editRef ? 'حفظ التعديل' : 'حفظ المجموعة'}</button>
     <div class="hist"><div class="hist-h"><span>السجل</span><span class="num">${hist.length} سجلات</span></div>
     ${hist.length ? hist.slice(0, 40).map((s, idx) => `<div class="hrow"><span class="d num">${s.date || ''}</span><span class="v">${timed ? `${s.r} ${unitTxt(ex)}` : `<span class="num">${fmt(s.w, 2)}</span> كجم × <span class="num">${s.r}</span>`}<small>RIR ${s.rir ?? '—'}${s.p != null ? ` · وجع ${s.p}` : ''}</small></span><button class="mini" data-ed="${idx}" aria-label="تعديل">${ICON.edit}</button><button class="mini del" data-del="${idx}" aria-label="مسح">${ICON.trash}</button></div>`).join('')
       : '<p class="muted small">لسه مفيش سجل للتمرين ده.</p>'}</div>`, p => {
     p.querySelectorAll('[data-q]').forEach(b => b.onclick = () => { $('#lW', p).value = b.dataset.q; });
+    const plg = $('#plGo', p); if (plg) plg.onclick = () => { S.repOverride[ex.lk] = sug.plateau.next; save(); closeSheet(); toast('النطاق اتغيّر ✓'); onSaved && onSaved('edit'); };
+    const plr = $('#plReset', p); if (plr) plr.onclick = () => { delete S.repOverride[ex.lk]; save(); closeSheet(); toast('رجع للأصل'); onSaved && onSaved('edit'); };
     p.querySelectorAll('[data-rir]').forEach(b => b.onclick = () => { rir = +b.dataset.rir; p.querySelectorAll('[data-rir]').forEach(x => x.classList.toggle('on', x === b)); });
     p.querySelectorAll('[data-p]').forEach(b => b.onclick = () => { pain = +b.dataset.p; p.querySelectorAll('[data-p]').forEach(x => x.classList.toggle('on', x === b)); });
     p.querySelectorAll('[data-del]').forEach(b => b.onclick = () => {
@@ -1064,8 +1431,23 @@ function drawPlayer() {
     const nSets = Object.values(sess.ex).flat().length;
     root.innerHTML = `<div class="segs">${segs}</div><div class="done-screen"><h2>عاش يا بطل 💪</h2><p>${dayByKey(P.dk).title} · الأسبوع ${P.w}</p>
       <div class="p-stats" style="justify-content:space-around"><div><b class="num">${clock(elapsed())}</b><small>الوقت</small></div><div><b class="num">${nSets}</b><small>مجموعة</small></div><div><b class="num">${fmt(vol)}</b><small>كجم حجم</small></div></div>
+      <div style="text-align:start;margin-top:18px"><b>الحصة كانت صعبة قد إيه؟</b> <small style="color:#9a9aa2">(1 سهلة جداً – 10 أقصى حاجة)</small>
+      <div class="rirs" style="grid-template-columns:repeat(10,1fr);gap:4px;margin-top:8px">${[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(n => `<button data-rpe="${n}" style="height:40px;background:#1b1b1f;border-color:#2a2a30;color:#fff">${n}</button>`).join('')}</div>
+      <b style="display:block;margin-top:14px">فيه وجع؟</b>
+      <div class="chips">${['مفيش', 'ركبة', 'كتف', 'كوع', 'ضهر', 'تاني'].map(a => `<button class="chip" data-pa="${a}" style="background:#1b1b1f;color:#fff">${a}</button>`).join('')}</div>
+      <textarea id="pNote" class="inp" style="margin-top:12px;background:#1b1b1f;border-color:#2a2a30;color:#fff;font-size:15px;font-weight:500" placeholder="ملاحظة للكابتن (اختياري)"></textarea></div>
       <button class="btn red block mt" id="pEnd">إنهاء</button><button class="btn outline block mt" style="background:transparent;color:#fff;border-color:#fff" id="pBack">رجوع للتمارين</button></div>`;
-    $('#pEnd').onclick = () => { sess.end = Date.now(); save(); closePlayer(); scheduleReminders(); toast('اتسجّل التمرين ✓'); };
+    let rpe = sess.rpe || null; const pa = new Set(sess.painAreas || []);
+    const paint = () => { root.querySelectorAll('[data-rpe]').forEach(b => { const on = +b.dataset.rpe === rpe; b.style.background = on ? 'var(--red)' : '#1b1b1f'; }); root.querySelectorAll('[data-pa]').forEach(b => { b.style.background = pa.has(b.dataset.pa) ? 'var(--red)' : '#1b1b1f'; }); };
+    root.querySelectorAll('[data-rpe]').forEach(b => b.onclick = () => { rpe = +b.dataset.rpe; paint(); });
+    root.querySelectorAll('[data-pa]').forEach(b => b.onclick = () => { const a = b.dataset.pa; if (a === 'مفيش') pa.clear(); else { pa.delete('مفيش'); } pa.has(a) ? pa.delete(a) : pa.add(a); paint(); });
+    if (sess.note) $('#pNote').value = sess.note;
+    paint();
+    $('#pEnd').onclick = () => {
+      sess.end = Date.now(); if (rpe) sess.rpe = rpe; sess.painAreas = [...pa].filter(x => x !== 'مفيش'); const n = $('#pNote').value.trim(); if (n) sess.note = n;
+      if (n) S.inbox.push({ t: Date.now(), text: `بعد ${dayByKey(P.dk).title}: ${n}` });
+      save(); closePlayer(); scheduleReminders(); ghSoon(5000); toast('اتسجّل التمرين ✓');
+    };
     $('#pBack').onclick = () => { P.finished = false; drawPlayer(); };
     return;
   }
@@ -1216,6 +1598,7 @@ function renderProgress(el) {
     return `<div class="grid3">${POSES.map(([k]) => `<div data-ph="${last}|${k}" style="aspect-ratio:3/4;border-radius:12px;overflow:hidden;background:var(--chip);display:grid;place-items:center"></div>`).join('')}</div>
       <p class="small muted" style="margin:10px 0 0">آخر صور ${nice(last)} · ${ds.length} مرة${ds.length > 1 ? ` من ${short(first)}` : ''} · ${photoDue() ? '<b class="down">ميعاد صور جديدة</b>' : `الجاية ${short(next)}`}</p>`; })()}
     <div class="grid2 mt"><button class="btn ${photoDue() ? 'red' : 'ghost'} sm" id="phNew">صوّر دلوقتي</button><button class="btn ghost sm" id="phCmp" ${photoDates().length < 2 ? 'disabled' : ''}>قارن</button></div></div>
+  <div class="grid2 mt"><button class="btn ghost sm" id="ckOpen">✍️ تشيك إن الأسبوع</button><button class="btn ghost sm" id="mrOpen">📊 تقرير الشهر</button></div>
   <button class="btn red block mt" id="report">ابعت تقرير الأسبوع للكابتن</button>
   <p class="muted small" style="text-align:center;margin:6px 0 0">بيفتح Claude على موبايلك والتقرير جاهز – اختار المحادثة دي وابعت.</p>`;
   $('#addBody').onclick = bodySheet;
@@ -1223,6 +1606,8 @@ function renderProgress(el) {
   const ag = $('#adaptGo'); if (ag) ag.onclick = () => applyAdaptive(adaptive().delta);
   const ar = $('#adaptReset'); if (ar) ar.onclick = () => { S.settings.kcal = Math.round(S.settings.kcal - riceAdj() * 1.3); S.settings.riceAdj = 0; save(); render(); toast('رجع للأصل ✓'); };
   $('#report').onclick = sendReport;
+  $('#ckOpen').onclick = checkinSheet;
+  $('#mrOpen').onclick = monthReportSheet;
   $('#phNew').onclick = () => photoSessionSheet();
   $('#phCmp').onclick = photoCompareSheet;
   fillPhotos(el);
@@ -1269,12 +1654,22 @@ function weeklyReport() {
   lines.push('', '## الأكل', ...foodDays.map(x => '- ' + x));
   const ad = adaptive(); if (ad) lines.push(`- حرق حقيقي محسوب: ${ad.tdee} · اتجاه ${fmt(ad.slopeWk, 2)} كجم/أسبوع · السعرات الحالية ${S.settings.kcal}${S.settings.riceAdj ? ` (رز ${riceAdj() > 0 ? '+' : ''}${riceAdj()} جم)` : ''}`);
   const v = verdict(); lines.push('', `## رأي التطبيق: ${v.t}`, v.d.replace(/<[^>]+>/g, ''));
+  { const c = S.checkins[checkinThisWeek() || ''] ; if (c) lines.push('', `## تشيك إن: طاقة ${c.energy}/5 · جوع ${c.hunger}/5 · نوم ${c.sleepQ}/5 · ضغط ${c.stress}/5 · مزاج ${c.mood}/5${c.waist ? ` · وسط ${c.waist} سم` : ''}${c.note ? `
+${c.note}` : ''}`); }
+  { const ses = Object.values(S.logs).filter(x => !x.legacy && x.date >= addDays(t, -6) && (x.rpe || (x.painAreas || []).length || x.note)); if (ses.length) lines.push('', '## إحساس الحصص', ...ses.map(x => `- ${x.date}: صعوبة ${x.rpe || '—'}/10${(x.painAreas || []).length ? ' · وجع ' + x.painAreas.join('، ') : ''}${x.note ? ' · ' + x.note : ''}`)); }
+  { const ins = S.inbox.filter(m => m.t > Date.now() - 7 * 864e5); if (ins.length) lines.push('', '## قلتلك', ...ins.map(m => '- ' + m.text)); }
   { const ds = photoDates(); if (ds.length) lines.push('', `## صور التقدّم: ${ds.length} مرة، آخرها ${ds[ds.length - 1]}${photoDue() ? ' (ميعاد صور جديدة)' : ''}`); }
   lines.push('', 'يا كابتن راجع وقولي نعدّل إيه.');
   return lines.join('\n');
 }
 
 /* ================= الأكل ================= */
+function rawTxt(it) {
+  const def = it.swapped ? SHOP_ALT[it.name] : SHOP[it.id];
+  if (!def || Math.abs(def.f - 1) < 0.1) return '';
+  const raw = Math.round(it.g * def.f / 5) * 5;
+  return def.f < 1 ? ` مسلوق · <b>${raw} جم ناشف</b>` : ` مطبوخ · <b>${raw} جم ني</b>`;
+}
 function renderFood(el) {
   const td = today();
   if (!view.food) view.food = td;
@@ -1286,22 +1681,32 @@ function renderFood(el) {
   const ek = ms.reduce((a, m) => a + (eaten[m.id] ? m.kcal : 0), 0), ep = ms.reduce((a, m) => a + (eaten[m.id] ? m.p : 0), 0);
   const banner = dt === 'mom' ? `<div class="verdict ok"><h3>جمعة ماما 😄</h3><p>ميزانية النهارده ~${fmt(kc)} سعر. استمتع: البروتين الأول، طبق واحد مليان، حتة حلو واحدة. ومتصومش بكرة.</p></div>`
     : dt === 'lecture' ? `<div class="verdict info"><h3>يوم محاضرة 🎓</h3><p>العشا برة أو في البريك. اختار تحت اللي أكلته عشان الحسبة تبقى صح.</p></div>` : '';
-  const itemRow = (it, mid) => `<div class="item"><span class="food-ic">${esc(it.name.trim()[0])}</span><div><b>${esc(it.name)}</b><small><span class="num">${it.g}</span> جم · <span class="num">${it.kcal}</span> سعر · <span class="num">${it.p}</span> جم بروتين</small>${it.swapped ? `<div class="swapped">بدل ${esc(it.base)}</div>` : ''}${it.adj ? `<div class="swapped">${it.adj > 0 ? '+' : ''}${it.adj} جم من تعديل الكابتن</div>` : ''}</div>${(DIET.meals.find(x => x.id === mid).items.find(x => x.id === it.id) || {}).alts?.length ? `<button class="sq red" data-fs="${it.id}" aria-label="بدّل">${ICON.swap}</button>` : ''}</div>`;
+  const itemRow = (it, mid) => `<div class="item"><span class="food-ic">${esc(it.name.trim()[0])}</span><div><b>${esc(it.name)}</b><small><span class="num">${it.g}</span> جم${rawTxt(it)} · <span class="num">${it.kcal}</span> سعر · <span class="num">${it.p}</span> جم بروتين</small>${it.swapped ? `<div class="swapped">بدل ${esc(it.base)}</div>` : ''}${it.adj ? `<div class="swapped">${it.adj > 0 ? '+' : ''}${it.adj} جم من تعديل الكابتن</div>` : ''}</div>${(DIET.meals.find(x => x.id === mid).items.find(x => x.id === it.id) || {}).alts?.length ? `<button class="sq red" data-fs="${it.id}" aria-label="بدّل">${ICON.swap}</button>` : ''}</div>`;
   el.innerHTML = `<div class="topbar"><h1>النظام الغذائي</h1><button class="iconbtn" id="dInfo" aria-label="معلومات">${ICON.info}</button></div>
   <div class="quick" style="padding:0 0 12px">${week.map(d => `<button data-fd="${d}" style="${d === t ? 'background:var(--red);color:#fff;border-color:var(--red)' : ''};height:auto;padding:8px 12px;line-height:1.3"><span style="display:block;font-size:13px">${d === td ? 'النهارده' : d === addDays(td, -1) ? 'امبارح' : AR_DAYS[parseISO(d).getDay()]}</span><small style="font-size:11px;opacity:.8">${tag(d)}</small></button>`).join('')}</div>
   ${future ? `<p class="muted small" style="margin:0 4px 10px">ده أكل ${nice(t)} – هتعلّم عليه يومها.</p>` : ''}
   ${banner ? banner + '<div class="mt"></div>' : ''}
+  ${t === td ? shopCard() : ''}
+  <button class="btn ghost block mt sm" id="rcOpen">📖 وصفات على قد سعراتك – بشاميل، بيتزا، كشري…</button>
   <div class="totals"><div class="tile"><small>السعرات</small><b class="num">${fmt(ek)} / ${fmt(kc)}</b><div class="bar ok"><i style="width:${Math.min(100, ek / kc * 100)}%"></i></div></div>
   <div class="tile"><small>البروتين (جم)</small><b class="num">${fmt(ep)} / ${fmt(pr)}</b><div class="bar ok"><i style="width:${Math.min(100, ep / pr * 100)}%"></i></div></div></div>
   ${ms.map(m => `<div class="card mt">
-    <div class="meal-h"><div><h3>${m.title}</h3><small>${m.time} · ${m.where} · <span class="num">${m.kcal}</span> سعر · <span class="num">${m.p}</span> جم بروتين</small></div>${future ? '' : `<button class="eat ${eaten[m.id] ? 'on' : ''}" data-eat="${m.id}" aria-label="أكلتها">${ICON.check}</button>`}</div>
+    <div class="meal-h"><div><h3>${m.title}</h3><small>${m.time} · ${m.where} · <span class="num">${m.kcal}</span> سعر · <span class="num">${m.p}</span> جم بروتين${(S.mealPhotos[t] || []).filter(x => x.meal === m.id).length ? ` · 📸 ${(S.mealPhotos[t] || []).filter(x => x.meal === m.id).length}` : ''}</small></div>${future ? '' : `<label class="eat" style="cursor:pointer" aria-label="صوّر الطبق"><svg viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg><input type="file" accept="image/*" capture="environment" data-mp="${m.id}" hidden></label>`}${future ? '' : `<button class="eat ${eaten[m.id] ? 'on' : ''}" data-eat="${m.id}" aria-label="أكلتها">${ICON.check}</button>`}</div>
+    ${(() => { const rc = ((S.days[t] || {}).recipes || {})[m.id]; return rc ? `<div class="item" style="background:#fff5f5"><span class="food-ic" style="background:var(--red);color:#fff">📖</span><div><b>بدلها: ${esc(rc.name)}</b><small><span class="num">${rc.kcal}</span> سعر · <span class="num">${rc.p}</span> جم بروتين</small></div><button class="mini" data-rcm="${m.id}" aria-label="الوصفة">${ICON.arrowL}</button><button class="mini del" data-rcx="${m.id}" aria-label="شيل">${ICON.trash}</button></div>` : ''; })()}
     ${m.special ? m.options.map(o => `<button class="item" style="width:100%;text-align:start" data-opt="${o.id}"><span class="food-ic" style="${m.pick === o.id ? 'background:var(--red);color:#fff' : ''}">${m.pick === o.id ? '✓' : ''}</span><div><b>${esc(o.name)}</b><small>${esc(o.desc)}</small><br><small><span class="num">${o.id === 'box' ? m.boxItems.reduce((a, x) => a + x.kcal, 0) : o.kcal}</span> سعر · <span class="num">${o.p}</span> جم بروتين</small></div></button>`).join('')
       : m.items.map(it => itemRow(it, m.id)).join('')}
-    <div class="note"><span class="i">i</span><span class="lbl">ملاحظة</span><span>${esc(m.note)}</span></div></div>`).join('')}
+    <div class="note"><span class="i">i</span><span class="lbl">ملاحظة</span><span>${esc(m.note)}</span></div>
+    ${future ? '' : `<button class="link small" data-rcfor="${m.id}" style="display:block;margin:0 16px 14px">📖 نفسك في أكلة تانية؟ وصفة على قد سعرات ${esc(m.title)}</button>`}</div>`).join('')}
   ${(() => { const ex = (S.days[t] || {}).extras || []; const tot = extraOf(t); return `<div class="card mt"><div class="meal-h"><div><h3>أكل زيادة</h3><small>حلو، مشروب، سناك، عزومة · ${tot ? `<span class="num">${tot}</span> سعر النهارده` : 'مفيش لسه'}</small></div><button class="sq red" id="exAdd" aria-label="ضيف">${ICON.plus}</button></div>
     ${ex.map((e, i) => `<div class="item"><span class="food-ic">${esc(e.name.trim()[0])}</span><div><b>${esc(e.name)}</b><small><span class="num">${e.kcal}</span> سعر</small></div><button class="mini del" data-exdel="${i}" aria-label="مسح">${ICON.trash}</button></div>`).join('')}
     ${!ex.length ? '<p class="muted small" style="margin:0;padding:12px 16px">اضغط + واختار اللي أكلته من القايمة – السعرات محسوبة جاهزة.</p>' : ''}</div>`; })()}`;
   el.querySelectorAll('[data-fd]').forEach(b => b.onclick = () => { view.food = b.dataset.fd; render(); });
+  el.querySelectorAll('[data-mp]').forEach(inp => inp.onchange = async () => { const f = inp.files && inp.files[0]; if (!f) return; try { await addMealPhoto(t, inp.dataset.mp, f); toast(ghOn() ? 'اتحفظت ✓ – الكابتن هيحسبها الصبح' : 'اتحفظت ✓'); render(); } catch (e) { toast('مقدرتش أحفظ الصورة'); } });
+  const so = $('#shopOpen'); if (so) so.onclick = shopSheet;
+  $('#rcOpen').onclick = () => recipesSheet();
+  el.querySelectorAll('[data-rcfor]').forEach(b => b.onclick = () => recipesSheet(b.dataset.rcfor));
+  el.querySelectorAll('[data-rcm]').forEach(b => b.onclick = () => { const x = (S.days[t] || {}).recipes || {}; const rr = x[b.dataset.rcm]; const r = rr && allRecipes().find(z => z.id === rr.id); if (r) recipeSheet(r, b.dataset.rcm); });
+  el.querySelectorAll('[data-rcx]').forEach(b => b.onclick = () => { delete S.days[t].recipes[b.dataset.rcx]; save(); render(); });
   el.querySelectorAll('[data-eat]').forEach(b => b.onclick = () => { const d = day(t); d.meals = d.meals || {}; d.meals[b.dataset.eat] = !d.meals[b.dataset.eat]; save(); render(); });
   el.querySelectorAll('[data-opt]').forEach(b => b.onclick = () => { if (future) { toast('اختار يومها بعد ما تاكل'); return; } const d = day(t); d.choice = b.dataset.opt; d.meals = d.meals || {}; d.meals.m3 = true; save(); render(); });
   el.querySelectorAll('[data-fs]').forEach(b => b.onclick = () => foodSwapSheet(b.dataset.fs));
@@ -1314,8 +1719,9 @@ function extrasSheet(d) {
   const draw = p => {
     const box = $('#exList', p);
     box.innerHTML = EXTRAS.map(c => { const its = c.items.filter(([n]) => !q || n.includes(q)); return its.length ? `<div class="section-t">${c.cat}</div>${its.map(([n, k]) => `<button class="alt" data-n="${esc(n)}" data-k="${k}"><span class="food-ic">${esc(n.trim()[0])}</span><span style="flex:1"><b>${esc(n)}</b><small><span class="num">${k}</span> سعر</small></span><span class="link">+</span></button>`).join('')}` : ''; }).join('')
-      + `<div class="section-t">مش لاقيه؟</div><div class="grid2"><input id="exName" class="inp" style="font-size:15px" placeholder="اسم الأكلة"><input id="exK" class="inp num" inputmode="numeric" placeholder="سعرات"></div><button class="btn ghost block mt sm" id="exCustom">ضيف</button><p class="muted small">مش عارف السعرات؟ صوّرها وابعتهالي في الشات وأنا أقولك.</p>`;
+      + `<div class="section-t">مش عارف السعرات؟</div><label class="btn ghost block sm" style="cursor:pointer">📸 صوّرها والكابتن يحسبها الصبح<input type="file" accept="image/*" capture="environment" id="exPh" hidden></label><div class="section-t">مش لاقيه؟</div><div class="grid2"><input id="exName" class="inp" style="font-size:15px" placeholder="اسم الأكلة"><input id="exK" class="inp num" inputmode="numeric" placeholder="سعرات"></div><button class="btn ghost block mt sm" id="exCustom">ضيف</button><p class="muted small">مش عارف السعرات؟ صوّرها وابعتهالي في الشات وأنا أقولك.</p>`;
     box.querySelectorAll('[data-n]').forEach(b => b.onclick = () => { const x = day(d); (x.extras = x.extras || []).push({ name: b.dataset.n, kcal: +b.dataset.k }); save(); toast(`اتضاف: ${b.dataset.n} (${b.dataset.k} سعر)`); render(); });
+    const xp = $('#exPh', p); if (xp) xp.onchange = async () => { const f = xp.files && xp.files[0]; if (!f) return; try { await addMealPhoto(d, 'extra', f); closeSheet(); render(); toast('اتحفظت ✓ – هقولك سعراتها الصبح'); } catch (e) { toast('مقدرتش أحفظ الصورة'); } };
     $('#exCustom', p).onclick = () => { const n = $('#exName', p).value.trim(), k = parseInt($('#exK', p).value); if (!n || !(k > 0)) { toast('اكتب الاسم والسعرات'); return; } const x = day(d); (x.extras = x.extras || []).push({ name: n, kcal: k }); save(); closeSheet(); render(); toast('اتضاف ✓'); };
   };
   openSheet(sheetHead('أكلت إيه زيادة؟', 'دوس على الحاجة – ممكن أكتر من مرة') + `<input id="exQ" class="inp mt" style="font-size:16px" placeholder="🔍 دوّر: كنافة، بيبسي، شاورما…"><div id="exList"></div><button class="btn red block mt" data-close>تمام</button>`, p => {
@@ -1338,7 +1744,10 @@ function renderMenu(el) {
     ['heart', 'الساعة والميزان', zeppSetupSheet, native ? (zeppState.enabled ? '✓ شغالة' : 'مش شغالة') : ''],
     ['save', 'المزامنة مع Google Drive', cloudSheet, cloudInfo.linked ? '✓ مربوط' : 'مش مربوط'],
     ['bell', 'الإشعارات', notifSheet, S.settings.notif ? 'شغالة' : 'مقفولة'],
+    ['shield', 'المراجعة اليومية مع الكابتن', ghSheet, ghOn() ? (S.settings.ghLast ? '✓ شغالة' : 'مستنية') : 'مش متفعّلة'],
+    ['report', 'رسايل الكابتن', coachMsgsSheet, S.coach.unread ? 'جديدة' : ''],
     ['report', 'ابعت تقرير الأسبوع للكابتن', sendReport, S.settings.lastReport ? short(S.settings.lastReport) : ''],
+    ['heart', 'مكان الجيم', gymSheet, S.settings.gym ? '✓' : ''],
     ['shield', 'قواعد الكابتن والمصادر', rulesSheet, ''],
     ...(S.settings.gainImported ? [] : [['save', 'استيراد من The Gain Universe', gainSheet, '']]),
     ['report', 'أدوات تانية', moreSheet, '']
@@ -1426,13 +1835,17 @@ if (native && S.settings.lastSync) hcSync(false);
 if (Zepp) zeppPull().then(() => { if ($('#player').hidden) render(); });
 if (Zepp) cloudPullIfNewer().then(() => { if (!cloudInfo.linked && !S.settings.cloudAsked && Object.keys(S.logs).length > 1) { S.settings.cloudAsked = true; save(); setTimeout(() => { if ($('#sheet').hidden && $('#player').hidden) cloudSheet(); }, 1500); } });
 if (LN) setupNotifActions();
+if (ghOn()) setTimeout(() => ghSync(), 2500);
+setTimeout(gymCheck, 3000);
 if (LN) (async () => {
   try { if (S.settings.notif && !S.settings.notifAsked) { S.settings.notifAsked = true; save(); await LN.requestPermissions(); } } catch (e) { }
   scheduleReminders();
 })();
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState !== 'visible') { if (cloudT) { clearTimeout(cloudT); cloudPush(); } return; }
+  if (document.visibilityState !== 'visible') { if (cloudT) { clearTimeout(cloudT); cloudPush(); } if (ghT) { clearTimeout(ghT); ghSync(); } return; }
   if (!P) cloudPullIfNewer();
+  if (!P && ghOn() && Date.now() - (S.settings.ghLast || 0) > 30 * 60e3) ghSync();
+  if (!P) setTimeout(gymCheck, 800);
   if (P) { tickPlayer(); keepAwake(true); }
   if (Zepp && !P) zeppPull().then(async () => {
     if ($('#player').hidden) render();
