@@ -86,6 +86,28 @@ public class ZeppBridge extends Plugin {
         call.resolve();
     }
 
+    /** يبعت نص لتطبيق Claude مباشرة، ولو مش متسطّب يفتح قايمة المشاركة */
+    @PluginMethod
+    public void shareText(PluginCall call) {
+        String text = call.getString("text", "");
+        Intent send = new Intent(Intent.ACTION_SEND);
+        send.setType("text/plain");
+        send.putExtra(Intent.EXTRA_TEXT, text);
+        send.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        JSObject r = new JSObject();
+        try {
+            Intent c = new Intent(send); c.setPackage("com.anthropic.claude");
+            getContext().startActivity(c);
+            r.put("app", "claude");
+        } catch (Exception e) {
+            Intent ch = Intent.createChooser(send, "ابعت التقرير للكابتن");
+            ch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            getContext().startActivity(ch);
+            r.put("app", "chooser");
+        }
+        call.resolve(r);
+    }
+
     @PluginMethod
     public void setAuto(PluginCall call) {
         prefs().edit().putBoolean("auto", call.getBoolean("enabled", true)).apply();

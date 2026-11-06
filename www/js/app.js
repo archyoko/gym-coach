@@ -53,7 +53,7 @@ function load() {
   try { raw = JSON.parse(localStorage.getItem(KEY) || 'null'); } catch (e) { raw = null; }
   if (!raw) raw = JSON.parse(JSON.stringify(SEED));
   raw.settings = Object.assign({}, SEED.settings, raw.settings || {});
-  for (const k of ['days', 'health', 'logs', 'body', 'swaps', 'foodSwaps']) raw[k] = raw[k] || {};
+  for (const k of ['days', 'health', 'logs', 'body', 'swaps', 'foodSwaps', 'photos']) raw[k] = raw[k] || {};
   return raw;
 }
 function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { toast('مقدرتش أحفظ – المساحة مليانة؟'); } }
@@ -373,7 +373,8 @@ async function scheduleReminders() {
       if (dt === 'lecture') add(4, at(d, 16, 0), 'النهارده محاضرة 🎓', 'العشا: العلبة من البيت، أو الطبق الذكي (نص رز، من غير طرب)، أو السوري بملعقة توم واحدة.');
       if (tr) add(5, at(d, 18, 45), `تمرين النهارده: ${tr.title} 💪`, tr.sub);
       if (dt === 'mom') add(6, at(d, 12, 0), 'جمعة ماما 😄', 'البروتين الأول، طبق واحد مليان، حتة حلو واحدة. ومتصومش بكرة.');
-      if (dow === 5) add(7, at(d, 20, 0), 'تقرير الأسبوع 📋', 'افتح التقدّم واضغط "تقرير الأسبوع للكابتن" وابعته.');
+      if (dow === 5) add(7, at(d, 20, 0), 'تقرير الأسبوع 📋', 'افتح التقدّم واضغط "ابعت تقرير الأسبوع للكابتن" – بيفتح Claude والتقرير جاهز.');
+      { const ds = photoDates(); const due = ds.length ? addDays(ds[ds.length - 1], 28) : S.settings.start; if (d === due || (i === 0 && photoDue() && dow === 6)) add(10, at(d, 7, 0), 'صور التقدّم 📸', 'قدام، جنب، ضهر – نفس المكان والإضاءة. قبل الفطار.'); }
       const next = parseISO(addDays(d, 1)).getDay();
       if (next !== 5) add(8, at(d, 22, 0), 'جهّز علب بكرة 🍱', isLecture(addDays(d, 1)) ? 'بكرة محاضرة – جهّز علبة العشا كمان لو تقدر.' : 'الفطار + البطاطا المشوية.');
       add(9, at(d, 23, 15), 'نوم 😴', 'عشان 7–8 ساعات. وافتح Zepp Active مرة قبل ما تنام عشان خطوات النهارده تتسجل.');
@@ -386,6 +387,90 @@ async function restNotify(untilMs, body) {
   try { await LN.cancel({ notifications: [{ id: REST_ID }] }); await LN.schedule({ notifications: [{ id: REST_ID, title: 'خلصت الراحة 💪', body, schedule: { at: new Date(untilMs), allowWhileIdle: true }, isExactNotification: true }] }); } catch (e) { }
 }
 async function restCancel() { if (!LN) return; try { await LN.cancel({ notifications: [{ id: REST_ID }] }); } catch (e) { } }
+/* ================= إرسال التقرير للكابتن ================= */
+async function sendReport() {
+  const txt = weeklyReport();
+  if (Zepp && Zepp.shareText) {
+    try { const r = await Zepp.shareText({ text: txt }); S.settings.lastReport = today(); save(); if (r.app === 'claude') toast('اتفتح Claude – اختار المحادثة وابعت'); return; } catch (e) { }
+  }
+  copyText(txt);
+}
+
+/* ================= صور التقدّم (على الموبايل بس – IndexedDB) ================= */
+const POSES = [['front', 'قدام'], ['side', 'جنب'], ['back', 'ضهر']];
+let _pdb = null;
+function photoDB() {
+  if (_pdb) return _pdb;
+  _pdb = new Promise((res, rej) => { try { const r = indexedDB.open('gymcoach-photos', 1); r.onupgradeneeded = () => r.result.createObjectStore('p'); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); } catch (e) { rej(e); } });
+  return _pdb;
+}
+async function pPut(key, blob) { const db = await photoDB(); return new Promise((res, rej) => { const tx = db.transaction('p', 'readwrite'); tx.objectStore('p').put(blob, key); tx.oncomplete = res; tx.onerror = () => rej(tx.error); }); }
+async function pGet(key) { const db = await photoDB(); return new Promise(res => { const rq = db.transaction('p').objectStore('p').get(key); rq.onsuccess = () => res(rq.result || null); rq.onerror = () => res(null); }); }
+async function pDel(key) { const db = await photoDB(); return new Promise(res => { const tx = db.transaction('p', 'readwrite'); tx.objectStore('p').delete(key); tx.oncomplete = res; }); }
+const photoDates = () => Object.keys(S.photos || {}).sort();
+function shrink(file) {
+  return new Promise((res, rej) => {
+    const img = new Image(); const url = URL.createObjectURL(file);
+    img.onload = () => { const max = 1280, k = Math.min(1, max / Math.max(img.width, img.height)); const c = document.createElement('canvas'); c.width = Math.round(img.width * k); c.height = Math.round(img.height * k); c.getContext('2d').drawImage(img, 0, 0, c.width, c.height); URL.revokeObjectURL(url); c.toBlob(b => b ? res(b) : rej(new Error('blob')), 'image/jpeg', 0.82); };
+    img.onerror = () => { URL.revokeObjectURL(url); rej(new Error('الصورة مش مفهومة')); };
+    img.src = url;
+  });
+}
+const urlCache = {};
+async function photoURL(d, pose) { const k = d + '|' + pose; if (urlCache[k]) return urlCache[k]; const b = await pGet(k); if (!b) return null; return (urlCache[k] = URL.createObjectURL(b)); }
+async function fillPhotos(root) {
+  for (const el of root.querySelectorAll('[data-ph]')) { const [d, pose] = el.dataset.ph.split('|'); const u = await photoURL(d, pose); el.innerHTML = u ? `<img src="${u}" alt="${pose}" style="width:100%;height:100%;object-fit:cover">` : '<span class="muted small">—</span>'; }
+}
+function photoDue() {
+  const ds = photoDates(); if (!ds.length) return true;
+  return diffDays(today(), ds[ds.length - 1]) >= 27;
+}
+function photoSessionSheet(d0) {
+  const d = d0 || today();
+  openSheet(sheetHead('صور التقدّم', nice(d)) + `
+    <p class="muted small" style="line-height:1.7;margin-top:8px">نفس المكان والإضاءة كل مرة، الصبح قبل الأكل، ونفس الشورت. الصور بتفضل على الموبايل ده بس – مش بتتبعت لأي حتة.</p>
+    <label class="field"><span>تاريخ الصور</span><input id="phD" class="inp num" type="date" value="${d}"></label>
+    <div class="grid3 mt">${POSES.map(([k, n]) => `<label style="display:block;text-align:center"><div data-ph="${d}|${k}" style="aspect-ratio:3/4;border-radius:16px;overflow:hidden;background:var(--chip);display:grid;place-items:center;border:1.5px dashed var(--line)"></div><b class="small" style="display:block;margin-top:6px">${n}</b><input type="file" accept="image/*" data-pick="${k}" hidden></label>`).join('')}</div>
+    <p class="muted small mt">اضغط على المربع ← صوّر أو اختار من الاستوديو.</p>
+    <button class="btn red block mt" data-close>تمام</button>`, p => {
+    fillPhotos(p);
+    $('#phD', p).onchange = e => { closeSheet(); photoSessionSheet(e.target.value || d); };
+    p.querySelectorAll('[data-pick]').forEach(inp => inp.onchange = async () => {
+      const f = inp.files && inp.files[0]; if (!f) return;
+      const day0 = $('#phD', p).value || d, pose = inp.dataset.pick;
+      try {
+        const b = await shrink(f); await pPut(day0 + '|' + pose, b);
+        delete urlCache[day0 + '|' + pose];
+        S.photos = S.photos || {}; (S.photos[day0] = S.photos[day0] || {})[pose] = true; save();
+        fillPhotos(p); render(); toast('اتحفظت ✓');
+      } catch (e) { toast('مقدرتش أحفظ الصورة: ' + (e.message || e)); }
+    });
+  });
+}
+function photoCompareSheet() {
+  const ds = photoDates(); if (ds.length < 1) { photoSessionSheet(); return; }
+  let a = ds[0], b = ds[ds.length - 1];
+  const draw = p => {
+    const body = $('#cmp', p);
+    const wA = eff(a).w, wB = eff(b).w;
+    body.innerHTML = `<div class="grid2 small muted" style="text-align:center;margin-bottom:6px"><span>${nice(a)}${wA ? ` · ${wA} كجم` : ''}</span><span>${nice(b)}${wB ? ` · ${wB} كجم` : ''}</span></div>` +
+      POSES.map(([k, n]) => `<div class="section-t">${n}</div><div class="grid2">${[a, b].map(d => `<div data-ph="${d}|${k}" style="aspect-ratio:3/4;border-radius:14px;overflow:hidden;background:var(--chip);display:grid;place-items:center"></div>`).join('')}</div>`).join('');
+    fillPhotos(body);
+  };
+  const opts = sel => ds.map(d => `<option value="${d}" ${d === sel ? 'selected' : ''}>${d}</option>`).join('');
+  openSheet(sheetHead('قارن الصور') + `<div class="grid2"><select id="cA" class="inp" style="font-size:14px">${opts(a)}</select><select id="cB" class="inp" style="font-size:14px">${opts(b)}</select></div><div id="cmp" class="mt"></div>
+    <div class="grid2 mt"><button class="btn ghost sm" id="cAdd">صور جديدة</button><button class="btn ghost sm" id="cDel">امسح صور ${b}</button></div>`, p => {
+    draw(p);
+    $('#cA', p).onchange = e => { a = e.target.value; draw(p); };
+    $('#cB', p).onchange = e => { b = e.target.value; draw(p); };
+    $('#cAdd', p).onclick = () => { closeSheet(); photoSessionSheet(); };
+    $('#cDel', p).onclick = async e => {
+      const btn = e.currentTarget; if (!btn.dataset.sure) { btn.dataset.sure = 1; btn.textContent = 'متأكد؟ اضغط تاني'; return; }
+      for (const [k] of POSES) { await pDel(b + '|' + k); delete urlCache[b + '|' + k]; } delete S.photos[b]; save(); closeSheet(); render(); toast('اتمسحت');
+    };
+  });
+}
+
 /* ================= استيراد The Gain Universe ================= */
 const gainLk = name => GAIN_MAP[name.trim().toLowerCase().replace(/\s+/g, ' ')] || ('gain:' + name.trim());
 async function gainSheet() {
@@ -533,6 +618,7 @@ function renderHome(el) {
   <div class="hello"><small>${nice(t)} · ${daysIn < 0 ? `البرنامج يبدأ بعد ${-daysIn} يوم` : `الأسبوع ${w} من ${set.weeks}`}</small><h1>أهلاً ${esc(set.name)} 👋</h1></div>
   <div class="sync" id="zeppline"></div>
   <div class="sync" id="syncline"></div>
+  ${photoDue() && [5, 6].includes(new Date().getDay()) ? `<button class="verdict info" style="display:block;width:100%;text-align:start;margin-top:12px" id="phBan"><h3>ميعاد صور التقدّم 📸</h3><p>قدام، جنب، ضهر – دقيقة واحدة.</p></button>` : ''}
   ${needMorning ? `<button class="verdict warn" style="display:block;width:100%;text-align:start;margin-top:12px" id="morning"><h3>تسجيل الصبح ⏱ 20 ثانية</h3><p>${zeppState.enabled ? 'الوزن بس – أرقام الساعة بتتقرا لوحدها.' : 'الوزن + خطوات وسعرات ونوم امبارح من الساعة.'}</p></button>` : ''}
   <div class="tiles mt">
     <div class="tile"><small>الخطوات</small><b class="num">${fmt(e.steps)}</b><div class="sub">${ey.steps ? `امبارح ${fmt(ey.steps)}` : `الهدف ${fmt(set.steps)}`}</div><div class="bar ${stepPct >= 100 ? 'ok' : ''}"><i style="width:${stepPct}%"></i></div></div>
@@ -555,6 +641,7 @@ function renderHome(el) {
   renderSyncLine();
   $('#tW').onclick = $('#qLog').onclick = () => dayEntrySheet(t);
   const mo = $('#morning'); if (mo) mo.onclick = () => dayEntrySheet(t);
+  const pb = $('#phBan'); if (pb) pb.onclick = () => photoSessionSheet();
   $('#cCr').onclick = () => { day(t).creatine = !day(t).creatine; save(); render(); };
   $('#cWa').onclick = () => { const d = day(t); d.water = r1(((d.water || 0) + 0.25) > set.water + 1 ? 0 : (d.water || 0) + 0.25); save(); render(); };
   $('#cMe').onclick = () => { tab = 'food'; render(); };
@@ -921,11 +1008,21 @@ function renderProgress(el) {
     ${(() => { const ds = bodyDates.filter(d => S.body[d].fatKg && S.body[d].skmKg); if (ds.length < 2) return ''; const a = S.body[ds[ds.length - 1]], b = S.body[ds[0]]; const df = r1(b.fatKg - a.fatKg), dm = r1(b.skmKg - a.skmKg); return `<p class="small" style="margin:10px 0 0;line-height:1.7">من ${short(ds[ds.length - 1])}: دهون <b class="${df <= 0 ? 'up' : 'down'}">${df > 0 ? '+' : ''}${df} كجم</b> · عضل هيكلي <b class="${dm >= 0 ? 'up' : 'down'}">${dm > 0 ? '+' : ''}${dm} كجم</b></p>`; })()}
     <p class="muted small" style="margin:8px 0 0">أرقام الميزان بتتقرا لوحدها من OKOK. الوسط اكتبه انت. ميزان البصمة بيتأثر بالمية – قارن نفس الميعاد كل أسبوع.</p>` : '<p class="muted small" style="margin:0">مرة في الأسبوع: انقل أرقام OKOK (دهون، عضل، مية) ومقاس الوسط عند السرّة.</p>'}
     <button class="btn ghost block mt sm" id="addBody">${ICON.plus.replace('<svg', '<svg style="stroke:var(--ink)"')} أضف قياس</button></div>
-  <button class="btn red block mt" id="report">تقرير الأسبوع للكابتن</button>`;
+  <div class="section-t">صور التقدّم</div>
+  <div class="card pad">${(() => { const ds = photoDates(); if (!ds.length) return `<p style="margin:0;line-height:1.7">صوّر نقطة البداية: <b>قدام، جنب، ضهر</b>. وكل 4 أسابيع الكابتن هيفكّرك، وتقارن جنب بعض.</p>`;
+    const first = ds[0], last = ds[ds.length - 1]; const next = addDays(last, 28);
+    return `<div class="grid3">${POSES.map(([k]) => `<div data-ph="${last}|${k}" style="aspect-ratio:3/4;border-radius:12px;overflow:hidden;background:var(--chip);display:grid;place-items:center"></div>`).join('')}</div>
+      <p class="small muted" style="margin:10px 0 0">آخر صور ${nice(last)} · ${ds.length} مرة${ds.length > 1 ? ` من ${short(first)}` : ''} · ${photoDue() ? '<b class="down">ميعاد صور جديدة</b>' : `الجاية ${short(next)}`}</p>`; })()}
+    <div class="grid2 mt"><button class="btn ${photoDue() ? 'red' : 'ghost'} sm" id="phNew">صوّر دلوقتي</button><button class="btn ghost sm" id="phCmp" ${photoDates().length < 2 ? 'disabled' : ''}>قارن</button></div></div>
+  <button class="btn red block mt" id="report">ابعت تقرير الأسبوع للكابتن</button>
+  <p class="muted small" style="text-align:center;margin:6px 0 0">بيفتح Claude على موبايلك والتقرير جاهز – اختار المحادثة دي وابعت.</p>`;
   $('#addBody').onclick = bodySheet;
   const ag = $('#adaptGo'); if (ag) ag.onclick = () => applyAdaptive(adaptive().delta);
   const ar = $('#adaptReset'); if (ar) ar.onclick = () => { S.settings.kcal = Math.round(S.settings.kcal - riceAdj() * 1.3); S.settings.riceAdj = 0; save(); render(); toast('رجع للأصل ✓'); };
-  $('#report').onclick = () => copyText(weeklyReport());
+  $('#report').onclick = sendReport;
+  $('#phNew').onclick = () => photoSessionSheet();
+  $('#phCmp').onclick = photoCompareSheet;
+  fillPhotos(el);
 }
 function bodySheet() {
   const d = today(), b = S.body[d] || {};
@@ -966,6 +1063,7 @@ function weeklyReport() {
   lines.push('', '## الأكل', ...foodDays.map(x => '- ' + x));
   const ad = adaptive(); if (ad) lines.push(`- حرق حقيقي محسوب: ${ad.tdee} · اتجاه ${fmt(ad.slopeWk, 2)} كجم/أسبوع · السعرات الحالية ${S.settings.kcal}${S.settings.riceAdj ? ` (رز ${riceAdj() > 0 ? '+' : ''}${riceAdj()} جم)` : ''}`);
   const v = verdict(); lines.push('', `## رأي التطبيق: ${v.t}`, v.d.replace(/<[^>]+>/g, ''));
+  { const ds = photoDates(); if (ds.length) lines.push('', `## صور التقدّم: ${ds.length} مرة، آخرها ${ds[ds.length - 1]}${photoDue() ? ' (ميعاد صور جديدة)' : ''}`); }
   lines.push('', 'يا كابتن راجع وقولي نعدّل إيه.');
   return lines.join('\n');
 }
@@ -1034,7 +1132,8 @@ function renderMenu(el) {
     ['heart', 'الساعة + Health Connect', hcSheet, native ? (S.settings.lastSync ? 'مربوط' : 'مش مربوط') : ''],
     ['scale', 'سجل الأوزان', weightsSheet, ''],
     ['ruler', 'القياسات وتحليل الميزان', bodySheet, ''],
-    ['report', 'تقرير الأسبوع للكابتن', () => copyText(weeklyReport()), ''],
+    ['report', 'ابعت تقرير الأسبوع للكابتن', sendReport, S.settings.lastReport ? short(S.settings.lastReport) : ''],
+    ['user', 'صور التقدّم', () => photoDates().length > 1 ? photoCompareSheet() : photoSessionSheet(), photoDates().length ? `${photoDates().length} مرة` : ''],
     ['bell', 'الإشعارات', notifSheet, S.settings.notif ? 'شغالة' : 'مقفولة'],
     ['save', 'استيراد من The Gain Universe', gainSheet, S.settings.gainImported ? 'اتستورد' : ''],
     ['shield', 'قواعد الكابتن', rulesSheet, ''],
