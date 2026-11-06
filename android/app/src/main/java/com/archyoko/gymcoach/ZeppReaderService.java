@@ -40,13 +40,21 @@ public class ZeppReaderService extends AccessibilityService {
     private int scrolls = 0;
     private int sleepStep = 0;          // 0 لسه، 1 فتحنا صفحة النوم
     private long sleepTapAt = 0;
+    private int sleepScrolls = 0;
+    private boolean swipeUpScreen() {
+        if (Build.VERSION.SDK_INT < 24) return false;
+        android.util.DisplayMetrics dm = getResources().getDisplayMetrics();
+        android.graphics.Path path = new android.graphics.Path();
+        path.moveTo(dm.widthPixels / 2f, dm.heightPixels * 0.78f); path.lineTo(dm.widthPixels / 2f, dm.heightPixels * 0.35f);
+        android.accessibilityservice.GestureDescription g = new android.accessibilityservice.GestureDescription.Builder()
+                .addStroke(new android.accessibilityservice.GestureDescription.StrokeDescription(path, 0, 350)).build();
+        return dispatchGesture(g, null, null);
+    }
 
     /* ---------- جودة النوم من صفحة النوم في Zepp Active ---------- */
     private static final String DUR = "(?:(\\d{1,2})\\s*(?:hr|h|ساعة|ساعات|س)\\s*)?(\\d{1,2})\\s*(?:min|m|دقيقة|دقائق|د)";
     private static Integer durAfter(String all, String labels) {
-        Matcher m = Pattern.compile("(?:" + labels + ")[^0-9]{0,40}?" + DUR, Pattern.CASE_INSENSITIVE).matcher(all);
-        if (m.find()) return (m.group(1) != null ? Integer.parseInt(m.group(1)) * 60 : 0) + Integer.parseInt(m.group(2));
-        m = Pattern.compile(DUR + "[^0-9]{0,25}?(?:" + labels + ")", Pattern.CASE_INSENSITIVE).matcher(all);
+        Matcher m = Pattern.compile("(?:" + labels + ")[^0-9]{0,40}?(?:\\d{1,3}(?:\\.\\d+)?\\s*%[^0-9]{0,25}?)?" + DUR, Pattern.CASE_INSENSITIVE).matcher(all);
         if (m.find()) return (m.group(1) != null ? Integer.parseInt(m.group(1)) * 60 : 0) + Integer.parseInt(m.group(2));
         return null;
     }
@@ -65,6 +73,22 @@ public class ZeppReaderService extends AccessibilityService {
             if (sc.find()) { int v = Integer.parseInt(sc.group(1)); if (v > 0 && v <= 100) o.put("score", v); }
             Matcher bt = Pattern.compile("(\\d{1,2}):(\\d{2})\\s*(?:ص|م|AM|PM|am|pm)?\\s*[-–~]\\s*(\\d{1,2}):(\\d{2})").matcher(all);
             if (bt.find()) { o.put("bed", bt.group(1) + ":" + bt.group(2)); o.put("wake", bt.group(3) + ":" + bt.group(4)); }
+            else if (deep != null || light != null) {
+                // Zepp Active: وقتين تحت الرسم (12:03 | 02:20) – نعرف مين البداية من مدة النوم
+                Matcher tt = Pattern.compile("(?<![0-9/])(\\d{1,2}):(\\d{2})(?![0-9:])[^0-9]{0,12}(\\d{1,2}):(\\d{2})(?![0-9:])").matcher(all);
+                Matcher tot = Pattern.compile("(\\d{1,2})\\s*(?:hr|h|ساعة|س)\\s*(\\d{1,2})\\s*(?:min|m|دقيقة|د)").matcher(all);
+                if (tt.find()) {
+                    int a = Integer.parseInt(tt.group(1)) * 60 + Integer.parseInt(tt.group(2)), b = Integer.parseInt(tt.group(3)) * 60 + Integer.parseInt(tt.group(4));
+                    int total = tot.find() ? Integer.parseInt(tot.group(1)) * 60 + Integer.parseInt(tot.group(2)) : 450;
+                    if (awake != null) total += awake;
+                    int ab = ((b - a) % 1440 + 1440) % 1440, ba = ((a - b) % 1440 + 1440) % 1440;
+                    boolean aFirst = Math.abs(ab - total) <= Math.abs(ba - total);
+                    String ta = tt.group(1) + ":" + tt.group(2), tb = tt.group(3) + ":" + tt.group(4);
+                    o.put("bed", aFirst ? ta : tb); o.put("wake", aFirst ? tb : ta);
+                }
+            }
+            Matcher dt = Pattern.compile("(\\d{2})/(\\d{2})/(\\d{4})").matcher(all);
+            if ((deep != null || light != null) && dt.find()) o.put("date", dt.group(3) + "-" + dt.group(2) + "-" + dt.group(1));
             Matcher rr = Pattern.compile("(?:Breathing|Respiratory|التنفس)[^0-9]{0,30}?(\\d{1,2}(?:\\.\\d)?)", Pattern.CASE_INSENSITIVE).matcher(all);
             if (rr.find()) o.put("resp", Double.parseDouble(rr.group(1)));
             Matcher rh = Pattern.compile("(?:Resting heart rate|Resting HR|نبض الراحة|معدل ضربات القلب أثناء الراحة|أثناء النوم)[^0-9]{0,30}?(\\d{2,3})", Pattern.CASE_INSENSITIVE).matcher(all);
@@ -225,7 +249,7 @@ public class ZeppReaderService extends AccessibilityService {
             if (active != null && active >= day.optInt("active", -1)) day.put("active", active);
             JSONObject det0 = parseSleepDetail(all);
             boolean detailPage = det0.has("deep") || det0.has("light");
-            if (detailPage) sleepMin = (det0.has("deep") && det0.has("light")) ? det0.optInt("deep") + det0.optInt("light") + det0.optInt("rem", 0) : null;
+            if (detailPage) { sleepMin = (det0.has("deep") && det0.has("light") && det0.has("rem")) ? det0.optInt("deep") + det0.optInt("light") + det0.optInt("rem") : null; if (det0.has("date")) sleepDate = det0.optString("date"); }
             if (sleepMin != null && sleepMin > 0) {
                 String sd = sleepDate != null ? sleepDate : d;   // النوم بيتسجل على يوم الصحيان
                 JSONObject sday = sd.equals(d) ? day : data.optJSONObject(sd);
@@ -234,8 +258,8 @@ public class ZeppReaderService extends AccessibilityService {
             }
             if (hr != null) day.put("hr", hr);
             JSONObject det = det0;
-            if (det.has("deep") || det.has("score") || det.has("rem")) {
-                String sd = sleepDate != null ? sleepDate : d;
+            if (det.has("deep") || det.has("score") || det.has("rem") || det.has("light") || det.has("awake")) {
+                String sd = det.has("date") ? det.optString("date") : sleepDate != null ? sleepDate : d;
                 JSONObject sday = sd.equals(d) ? day : data.optJSONObject(sd);
                 if (sday == null) { sday = new JSONObject(); data.put(sd, sday); }
                 java.util.Iterator<String> ks = det.keys();
@@ -271,6 +295,15 @@ public class ZeppReaderService extends AccessibilityService {
         if (sleepStep == 1) {
             // إحنا في صفحة النوم – استنى تحمّل، وبعدين ارجع وكمّل
             if (System.currentTimeMillis() - sleepTapAt < 2200 && !timedOut) { handler.postDelayed(captureTask, 900); return; }
+            JSONObject got = null;
+            try { JSONObject all2 = new JSONObject(p.getString("data", "{}")); String sd = sleepDate != null ? sleepDate : today(); got = all2.optJSONObject(sd); } catch (Exception ignored) { }
+            boolean full = got != null && got.has("s_deep") && got.has("s_light") && got.has("s_rem") && got.has("s_awake");
+            if (!full && sleepScrolls < 3 && !timedOut) {
+                AccessibilityNodeInfo sc = findScrollable(root);
+                if (sc != null && sc.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)) { sleepScrolls++; handler.postDelayed(captureTask, 1000); return; }
+                if (swipeUpScreen()) { sleepScrolls++; handler.postDelayed(captureTask, 1100); return; }
+            }
+            sleepScrolls = 0;
             sleepStep = 2;
             performGlobalAction(GLOBAL_ACTION_BACK);
             handler.postDelayed(captureTask, 1200);
@@ -294,12 +327,11 @@ public class ZeppReaderService extends AccessibilityService {
         }
         if (sleepStep == 0 && sleepMin != null && !timedOut && Calendar.getInstance().get(Calendar.HOUR_OF_DAY) < 14) {
             Pattern sp = Pattern.compile("(\\d{1,2})\\s*(hr|h|ساعة|ساعات|س)\\s*(\\d{1,2})\\s*(min|m|دقيقة|دقائق|د)");
-            for (Item it : items) {
-                if (sp.matcher(it.text).find() && it.text.length() < 60) {
-                    if (tap(it)) { sleepStep = 1; sleepTapAt = System.currentTimeMillis(); handler.postDelayed(captureTask, 2400); return; }
-                    break;
-                }
-            }
+            Item target = null;
+            for (Item it : items) if (sp.matcher(it.text).find() && it.text.length() < 60) { target = it; break; }
+            if (target == null) for (Item it : items) if (it.text.equalsIgnoreCase("hr") || it.text.equals("ساعة")) { target = it; break; }
+            if (target == null) for (Item it : items) if (it.text.matches("^(ينام|النوم|نوم|Sleep)$")) { target = it; break; }
+            if (target != null && tap(target)) { sleepStep = 1; sleepScrolls = 0; sleepTapAt = System.currentTimeMillis(); handler.postDelayed(captureTask, 2400); return; }
         }
         sleepStep = 0;
         for (int i = 0; i < scrolls; i++) {
