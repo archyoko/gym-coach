@@ -793,7 +793,7 @@ async function gainSheet() {
   });
 }
 /* ================= تشيك إن الجمعة ================= */
-const CHECK_Q = [['energy', 'الطاقة طول الأسبوع', ['😴 واقعة', 'قليلة', 'عادي', 'كويسة', '⚡ عالية']], ['hunger', 'الجوع', ['مش جعان', 'خفيف', 'عادي', 'جعان', '🔥 جعان جداً']], ['sleepQ', 'جودة النوم', ['وحشة جداً', 'وحشة', 'عادي', 'كويسة', 'ممتازة']], ['stress', 'ضغط الشغل والمذاكرة', ['هادي', 'خفيف', 'متوسط', 'عالي', '🤯 فوق طاقتي']], ['mood', 'المزاج', ['😞', '😕', '😐', '🙂', '😁']]];
+const CHECK_Q = [['energy', 'الطاقة طول الأسبوع', ['😴 واقعة', 'قليلة', 'عادي', 'كويسة', '⚡ عالية']], ['hunger', 'الجوع', ['مش جعان', 'خفيف', 'عادي', 'جعان', '🔥 جعان جداً']], ['stress', 'ضغط الشغل والمذاكرة', ['هادي', 'خفيف', 'متوسط', 'عالي', '🤯 فوق طاقتي']], ['mood', 'المزاج', ['😞', '😕', '😐', '🙂', '😁']]];
 const checkinThisWeek = () => { for (let i = 0; i < 7; i++) { const d = addDays(today(), -i); if (S.checkins[d]) return d; } return null; };
 function checkinSheet() {
   const d = today(), c = Object.assign({}, S.checkins[d] || {});
@@ -1123,9 +1123,8 @@ function monthReportSheet() {
     <div class="section-t">الالتزام</div><p style="margin:0 4px">${ads.length ? `متوسط ${Math.round(ads.reduce((a, b) => a + b) / ads.length)}% · ${ads.map(x => x + '%').join(' ← ')}` : '—'}</p>
     <div class="section-t">القوة</div>${str.length ? `<p style="margin:0 4px;line-height:1.9">${str.slice(0, 5).map(s => `${esc(s.name)} <b class="${s.ch >= 0 ? 'up' : 'down'}">${s.ch >= 0 ? '+' : ''}${fmt(s.ch, 0)}%</b>`).join('<br>')}</p>` : '<p class="muted small">لسه مفيش كفاية حصص.</p>'}
     ${p0 && p1 && p0 !== p1 ? `<div class="section-t">الصور (${short(p0)} ← ${short(p1)})</div>${POSES.map(([k, n]) => `<div class="grid2" style="margin-bottom:8px">${[p0, p1].map(d => `<div data-ph="${d}|${k}" style="aspect-ratio:3/4;border-radius:12px;overflow:hidden;background:var(--chip);display:grid;place-items:center"></div>`).join('')}</div>`).join('')}` : ''}
-    <button class="btn red block mt" id="mrSend">ابعته للكابتن</button>`, p => {
+    <p class="muted small mt" style="text-align:center">الكابتن بيشوف التقرير ده لوحده في مراجعة الجمعة.</p>`, p => {
     fillPhotos(p);
-    $('#mrSend', p).onclick = async () => { const txt = `# تقرير الشهر – Lifestyle\n${from} → ${t}\n- الوزن: ${wA ? fmt(wA.avg, 2) : '—'} → ${wB ? fmt(wB.avg, 2) : '—'}\n- الوسط: ${waist(from) ?? '—'} → ${waist() ?? '—'}\n- الدهون: ${b0 && b0.fatKg || '—'} → ${b1 && b1.fatKg || '—'} كجم\n- العضل الهيكلي: ${b0 && b0.skmKg || '—'} → ${b1 && b1.skmKg || '—'} كجم\n- الالتزام: ${ads.join('، ')}\n- القوة: ${str.slice(0, 6).map(s => `${s.name} ${fmt(s.ch, 0)}%`).join('، ')}`; if (Zepp && Zepp.shareText) { try { await Zepp.shareText({ text: txt }); return; } catch (e) { } } copyText(txt); };
   });
 }
 
@@ -1689,13 +1688,12 @@ function renderProgress(el) {
       <p class="small muted" style="margin:10px 0 0">آخر صور ${nice(last)} · ${ds.length} مرة${ds.length > 1 ? ` من ${short(first)}` : ''} · ${photoDue() ? '<b class="down">ميعاد صور جديدة</b>' : `الجاية ${short(next)}`}</p>`; })()}
     <div class="grid2 mt"><button class="btn ${photoDue() ? 'red' : 'ghost'} sm" id="phNew">صوّر دلوقتي</button><button class="btn ghost sm" id="phCmp" ${photoDates().length < 2 ? 'disabled' : ''}>قارن</button></div></div>
   <div class="grid2 mt"><button class="btn ghost sm" id="ckOpen">✍️ تشيك إن الأسبوع</button><button class="btn ghost sm" id="mrOpen">📊 تقرير الشهر</button></div>
-  <button class="btn red block mt" id="report">ابعت تقرير الأسبوع للكابتن</button>
+
   <p class="muted small" style="text-align:center;margin:6px 0 0">بيفتح Claude على موبايلك والتقرير جاهز – اختار المحادثة دي وابعت.</p>`;
   $('#addBody').onclick = bodySheet;
   $('#wEdit').onclick = weightsSheet;
   const ag = $('#adaptGo'); if (ag) ag.onclick = () => applyAdaptive(adaptive().delta);
   const ar = $('#adaptReset'); if (ar) ar.onclick = () => { S.settings.kcal = Math.round(S.settings.kcal - riceAdj() * 1.3); S.settings.riceAdj = 0; save(); render(); toast('رجع للأصل ✓'); };
-  $('#report').onclick = sendReport;
   $('#ckOpen').onclick = checkinSheet;
   $('#mrOpen').onclick = monthReportSheet;
   $('#phNew').onclick = () => photoSessionSheet();
@@ -1744,7 +1742,7 @@ function weeklyReport() {
   lines.push('', '## الأكل', ...foodDays.map(x => '- ' + x));
   const ad = adaptive(); if (ad) lines.push(`- حرق حقيقي محسوب: ${ad.tdee} · اتجاه ${fmt(ad.slopeWk, 2)} كجم/أسبوع · السعرات الحالية ${S.settings.kcal}${S.settings.riceAdj ? ` (رز ${riceAdj() > 0 ? '+' : ''}${riceAdj()} جم)` : ''}`);
   const v = verdict(); lines.push('', `## رأي التطبيق: ${v.t}`, v.d.replace(/<[^>]+>/g, ''));
-  { const c = S.checkins[checkinThisWeek() || ''] ; if (c) lines.push('', `## تشيك إن: طاقة ${c.energy}/5 · جوع ${c.hunger}/5 · نوم ${c.sleepQ}/5 · ضغط ${c.stress}/5 · مزاج ${c.mood}/5${c.waist ? ` · وسط ${c.waist} سم` : ''}${c.note ? `
+  { const c = S.checkins[checkinThisWeek() || ''] ; if (c) lines.push('', `## تشيك إن: طاقة ${c.energy}/5 · جوع ${c.hunger}/5 ${c.sleepQ ? `· نوم ${c.sleepQ}/5 ` : ''}· ضغط ${c.stress}/5 · مزاج ${c.mood}/5${c.waist ? ` · وسط ${c.waist} سم` : ''}${c.note ? `
 ${c.note}` : ''}`); }
   { const ses = Object.values(S.logs).filter(x => !x.legacy && x.date >= addDays(t, -6) && (x.rpe || (x.painAreas || []).length || x.note)); if (ses.length) lines.push('', '## إحساس الحصص', ...ses.map(x => `- ${x.date}: صعوبة ${x.rpe || '—'}/10${(x.painAreas || []).length ? ' · وجع ' + x.painAreas.join('، ') : ''}${x.note ? ' · ' + x.note : ''}`)); }
   { const ins = S.inbox.filter(m => m.t > Date.now() - 7 * 864e5); if (ins.length) lines.push('', '## قلتلك', ...ins.map(m => '- ' + m.text)); }
@@ -1834,9 +1832,7 @@ function renderMenu(el) {
     ['heart', 'الساعة والميزان', zeppSetupSheet, native ? (zeppState.enabled ? '✓ شغالة' : 'مش شغالة') : ''],
     ['save', 'المزامنة مع Google Drive', cloudSheet, cloudInfo.linked ? '✓ مربوط' : 'مش مربوط'],
     ['bell', 'الإشعارات', notifSheet, S.settings.notif ? 'شغالة' : 'مقفولة'],
-    ['shield', 'المراجعة اليومية مع الكابتن', ghSheet, ghOn() ? (S.settings.ghLast ? '✓ شغالة' : 'مستنية') : 'مش متفعّلة'],
-    ['report', 'رسايل الكابتن', coachMsgsSheet, S.coach.unread ? 'جديدة' : ''],
-    ['report', 'ابعت تقرير الأسبوع للكابتن', sendReport, S.settings.lastReport ? short(S.settings.lastReport) : ''],
+    ['shield', 'الكابتن (المراجعة اليومية)', () => (ghOn() && (S.coach.msgs || []).length ? coachMsgsSheet() : ghSheet()), ghOn() ? (S.settings.ghLast ? '✓ شغالة' : 'مستنية') : 'مش متفعّلة'],
     ['heart', 'مكان الجيم', gymSheet, S.settings.gym ? '✓' : ''],
     ['shield', 'قواعد الكابتن والمصادر', rulesSheet, ''],
     ...(S.settings.gainImported ? [] : [['save', 'استيراد من The Gain Universe', gainSheet, '']]),
@@ -1848,7 +1844,7 @@ function renderMenu(el) {
   el.querySelectorAll('[data-r]').forEach(b => b.onclick = rows[+b.dataset.r][2]);
 }
 function moreSheet() {
-  const items = [['Health Connect (خطوات الموبايل)', hcSheet], ['سجل الأوزان وتعديلها', weightsSheet], ['نسخة احتياطية يدوي (نسخ ولصق)', backupSheet], ...(S.settings.gainImported ? [['استيراد من The Gain تاني', gainSheet]] : [])];
+  const items = [['سجل الأوزان وتعديلها', weightsSheet], ['إعدادات المراجعة اليومية', ghSheet], ...(S.settings.gainImported ? [['استيراد من The Gain تاني', gainSheet]] : [])];
   openSheet(sheetHead('أدوات تانية', 'حاجات مش هتحتاجها كتير') + items.map((x, i) => `<button class="row" data-m="${i}"><span>${x[0]}</span>${ICON.arr}</button>`).join(''), p => {
     p.querySelectorAll('[data-m]').forEach(b => b.onclick = () => { closeSheet(); items[+b.dataset.m][1](); });
   });
