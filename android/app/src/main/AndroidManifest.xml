@@ -24,6 +24,17 @@
 
         </activity>
 
+        <service
+            android:name=".ZeppReaderService"
+            android:exported="false"
+            android:label="@string/zepp_reader_label"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data android:name="android.accessibilityservice" android:resource="@xml/zepp_reader" />
+        </service>
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
@@ -34,6 +45,10 @@
                 android:resource="@xml/file_paths"></meta-data>
         </provider>
     </application>
+
+    <queries>
+        <package android:name="com.huami.watch.pop" />
+    </queries>
 
     <!-- Permissions -->
 

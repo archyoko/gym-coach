@@ -61,13 +61,18 @@ S = load();
 const day = d => (S.days[d] = S.days[d] || {});
 
 /* القيم الفعلية لليوم: اليدوي يكسب في الوزن، والساعة تكسب في الخطوات والحرق */
+function latestWeight(d) { for (let i = 0; i < 30; i++) { const x = S.days[addDays(d, -i)] || {}, y = S.health[addDays(d, -i)] || {}; const w = x.w ?? y.weight; if (w) return w; } return S.settings.startWeight; }
+function bmr(d) { const s = S.settings; return Math.round(10 * latestWeight(d) + 6.25 * s.height - 5 * s.age + 5); }
+/* الأولوية: اليدوي ← ساعة Zepp Active ← Health Connect (الموبايل/Fit) */
 function eff(d) {
   const m = S.days[d] || {}, h = S.health[d] || {};
+  const active = m.active ?? h.zactive ?? h.active ?? null;
   return {
     w: m.w ?? h.weight ?? null,
-    steps: m.steps ?? h.steps ?? null,   // أرقام الساعة اليدوية تكسب خطوات الموبايل
-    kcal: m.kcal ?? h.kcal ?? null,
-    sleep: m.sleepMin ?? h.sleepMin ?? null,
+    steps: m.steps ?? h.zsteps ?? h.steps ?? null,
+    active,
+    kcal: m.kcal ?? (active != null ? bmr(d) + active : h.kcal) ?? null,
+    sleep: m.sleepMin ?? h.zsleep ?? h.sleepMin ?? null,
     rhr: h.rhr ?? null,
     fat: h.fat ?? null,
     creatine: !!m.creatine,
@@ -208,6 +213,53 @@ async function hcSync(loud) {
   render();
 }
 
+/* ================= ساعة Zepp Active (قراءة الشاشة) ================= */
+let Zepp = null;
+try { if (native) Zepp = Cap.registerPlugin ? Cap.registerPlugin('ZeppBridge') : Cap.Plugins.ZeppBridge; } catch (e) { Zepp = null; }
+let zeppState = { enabled: false, installed: false, lastRead: 0, raw: '' };
+async function zeppPull() {
+  if (!Zepp) return false;
+  try {
+    const r = await Zepp.getData();
+    zeppState = { enabled: !!r.enabled, installed: !!r.installed, lastRead: r.lastRead || 0, raw: r.raw || '' };
+    const data = JSON.parse(r.data || '{}');
+    for (const [d, v] of Object.entries(data)) {
+      if (d === 'workouts') continue;
+      const h = (S.health[d] = S.health[d] || {});
+      if (v.steps != null) h.zsteps = v.steps;
+      if (v.active != null) h.zactive = v.active;
+      if (v.sleepMin != null) h.zsleep = v.sleepMin;
+      if (v.hr != null) h.zhr = v.hr;
+    }
+    for (const [d, w] of Object.entries(data.workouts || {})) { const h = (S.health[d] = S.health[d] || {}); h.wkcal = w.kcal; h.wmin = w.min; }
+    save(); return true;
+  } catch (e) { return false; }
+}
+async function zeppFetch() {
+  if (!Zepp) { toast('ده شغال في تطبيق الأندرويد بس'); return; }
+  await zeppPull();
+  if (!zeppState.installed) { toast('Zepp Active مش متسطّب على الموبايل'); return; }
+  if (!zeppState.enabled) { zeppSetupSheet(); return; }
+  try { await Zepp.fetchNow(); } catch (e) { toast(e.message || 'مقدرتش أفتح Zepp Active'); }
+}
+function zeppSetupSheet() {
+  openSheet(sheetHead('قراءة الساعة أوتوماتيك', 'إعداد مرة واحدة – دقيقة') + `
+    <p style="line-height:1.8">كوتش الجيم بيقرا الخطوات والسعرات والنوم من شاشة "صحة" في Zepp Active كل ما يتفتح. الخدمة مقفولة على Zepp Active بس.</p>
+    <div class="note"><span class="i">1</span><span>اضغط الزرار ده ← هتفتح صفحة معلومات التطبيق ← اضغط <b>⋮</b> فوق ← <b>السماح بالإعدادات المقيدة</b> (Allow restricted settings). لو مش ظاهرة، كمّل للخطوة 2 الأول.</span></div>
+    <button class="btn ghost block mt sm" id="z1">افتح معلومات التطبيق</button>
+    <div class="note mt"><span class="i">2</span><span>اضغط الزرار ده ← <b>التطبيقات المثبتة</b> (Downloaded apps) ← <b>كوتش الجيم – قراءة الساعة</b> ← شغّلها ← وافق.</span></div>
+    <button class="btn ghost block mt sm" id="z2">افتح إمكانية الوصول</button>
+    <div class="note mt"><span class="i">3</span><span>ارجع هنا واضغط <b>جرّب دلوقتي</b>. هيفتح Zepp Active ويرجعك لوحده.</span></div>
+    <button class="btn red block mt" id="z3">جرّب دلوقتي</button>
+    <p class="muted small mt">حالة الخدمة: ${zeppState.enabled ? '✓ شغالة' : '✗ مش شغالة لسه'}${zeppState.lastRead ? ` · آخر قراءة ${new Date(zeppState.lastRead).toLocaleTimeString('ar-EG', { hour: 'numeric', minute: '2-digit' })}` : ''}</p>
+    ${zeppState.raw ? '<button class="btn ghost block sm" id="z4">انسخ اللي اتقرا (لو الأرقام غلط ابعتهولي)</button>' : ''}`, p => {
+    $('#z1', p).onclick = () => Zepp && Zepp.openAppInfo();
+    $('#z2', p).onclick = () => Zepp && Zepp.openSettings();
+    $('#z3', p).onclick = async () => { await zeppPull(); if (!zeppState.enabled) { toast('الخدمة لسه مش شغالة – اعمل خطوة 2'); return; } closeSheet(); zeppFetch(); };
+    const z4 = $('#z4', p); if (z4) z4.onclick = () => copyText(zeppState.raw);
+  });
+}
+
 /* ================= واجهة عامة ================= */
 let tab = 'home';
 const view = { week: null, day: null };
@@ -240,6 +292,14 @@ function render() {
 document.querySelectorAll('#tabbar button').forEach(b => b.onclick = () => { tab = b.dataset.tab; window.scrollTo(0, 0); render(); });
 
 function renderSyncLine() {
+  const zl = $('#zeppline');
+  if (zl && native) {
+    const lr = zeppState.lastRead; const m = lr ? Math.round((Date.now() - lr) / 6e4) : null;
+    zl.innerHTML = zeppState.enabled
+      ? `<span class="dot ${m != null && m < 180 ? 'ok' : ''}"></span><span>الساعة: ${m == null ? 'لسه مفيش قراءة' : m < 1 ? 'اتقرت دلوقتي' : m < 60 ? `اتقرت من ${m} دقيقة` : `اتقرت من ${Math.round(m / 60)} ساعة`}</span><button id="zGo">هات أرقام الساعة</button>`
+      : `<span class="dot bad"></span><span>الساعة مش مربوطة</span><button id="zGo">اربطها</button>`;
+    $('#zGo').onclick = zeppFetch;
+  }
   const el = $('#syncline'); if (!el) return;
   if (!native) { el.innerHTML = `<span class="dot"></span><span>Health Connect بيشتغل في تطبيق الأندرويد</span>`; return; }
   if (syncing) { el.innerHTML = `<span class="dot"></span><span>بيحدّث من Health Connect…</span>`; return; }
@@ -280,7 +340,7 @@ function verdict() {
 function renderHome(el) {
   const t = today(), e = eff(t), set = S.settings, w = curWeek();
   const yd = addDays(t, -1), ey = eff(yd), my = S.days[yd] || {};
-  const needMorning = !(S.days[t] || {}).w || my.kcal == null;
+  const needMorning = !(S.days[t] || {}).w || (!zeppState.enabled && my.active == null && my.kcal == null);
   const tdDay = todaysDay(), nd = nextDay();
   const sess = tdDay ? S.logs[sessKey(w, tdDay.key)] : null;
   const doneCount = sess ? Object.values(sess.ex).filter(x => x.length).length : 0;
@@ -291,12 +351,13 @@ function renderHome(el) {
   const daysIn = diffDays(t, set.start);
   el.innerHTML = `
   <div class="hello"><small>${nice(t)} · ${daysIn < 0 ? `البرنامج يبدأ بعد ${-daysIn} يوم` : `الأسبوع ${w} من ${set.weeks}`}</small><h1>أهلاً ${esc(set.name)} 👋</h1></div>
+  <div class="sync" id="zeppline"></div>
   <div class="sync" id="syncline"></div>
-  ${needMorning ? `<button class="verdict warn" style="display:block;width:100%;text-align:start;margin-top:12px" id="morning"><h3>تسجيل الصبح ⏱ 20 ثانية</h3><p>الوزن + خطوات وحرق ونوم امبارح من الساعة.</p></button>` : ''}
+  ${needMorning ? `<button class="verdict warn" style="display:block;width:100%;text-align:start;margin-top:12px" id="morning"><h3>تسجيل الصبح ⏱ 20 ثانية</h3><p>${zeppState.enabled ? 'الوزن بس – أرقام الساعة بتتقرا لوحدها.' : 'الوزن + خطوات وسعرات ونوم امبارح من الساعة.'}</p></button>` : ''}
   <div class="tiles mt">
     <div class="tile"><small>الخطوات</small><b class="num">${fmt(e.steps)}</b><div class="sub">${ey.steps ? `امبارح ${fmt(ey.steps)}` : `الهدف ${fmt(set.steps)}`}</div><div class="bar ${stepPct >= 100 ? 'ok' : ''}"><i style="width:${stepPct}%"></i></div></div>
-    <div class="tile"><small>الحرق امبارح</small><b class="num">${fmt(ey.kcal)}</b><div class="sub">${ey.kcal ? `الأكل ${fmt(set.kcal)} → عجز ~${fmt(ey.kcal - set.kcal)}` : 'من ساعة Zepp Active'}</div></div>
-    <div class="tile"><small>النوم امبارح</small><b class="num">${ey.sleep ? `${Math.floor(ey.sleep / 60)}:${pad2(ey.sleep % 60)}` : '—'}</b><div class="sub">الهدف 7–8 ساعات</div></div>
+    <div class="tile"><small>الحرق امبارح (تقديري)</small><b class="num">${fmt(ey.kcal)}</b><div class="sub">${ey.kcal ? `نشاط ${fmt(ey.active)} + راحة ${fmt(bmr(yd))} · عجز ~${fmt(ey.kcal - set.kcal)}` : 'من ساعة Zepp Active'}</div></div>
+    <div class="tile"><small>نوم امبارح بالليل</small><b class="num">${e.sleep ? `${Math.floor(e.sleep / 60)}:${pad2(e.sleep % 60)}` : '—'}</b><div class="sub">الهدف 7–8 ساعات</div></div>
     <div class="tile" role="button" id="tW"><small>الوزن</small><b class="num">${lastW ? fmt(lastW.w, 1) : '—'}</b><div class="sub">${lastW ? (lastW.d === t ? 'النهارده' : short(lastW.d)) : 'اضغط وسجّل'}</div></div>
   </div>
   <div class="section-t">تمرين النهارده</div>
@@ -323,16 +384,15 @@ function renderHome(el) {
 function dayEntrySheet(d) {
   const m = S.days[d] || {}, h = S.health[d] || {};
   const y = addDays(d, -1), my = S.days[y] || {}, hy = S.health[y] || {};
-  const sl = my.sleepMin ? `${Math.floor(my.sleepMin / 60)}.${pad2(Math.round(my.sleepMin % 60 / 6 * 10) / 10)}` : '';
   openSheet(sheetHead(nice(d), 'تسجيل الصبح – 20 ثانية') + `
     <label class="field"><span>الوزن الصبح بعد الحمام (كجم)${h.weight ? ` – الميزان قال ${h.weight}` : ''}</span><input id="fW" class="inp num" inputmode="decimal" value="${m.w ?? ''}" placeholder="${h.weight ?? ''}"></label>
     <div class="section-t" style="margin-top:18px">من ساعة Zepp Active – يوم امبارح (${short(y)})</div>
     <div class="grid3">
       <label class="field" style="margin-top:0"><span>الخطوات</span><input id="fS" class="inp num" inputmode="numeric" value="${my.steps ?? ''}" placeholder="${hy.steps ?? ''}"></label>
-      <label class="field" style="margin-top:0"><span>الحرق الكلي</span><input id="fK" class="inp num" inputmode="numeric" value="${my.kcal ?? ''}"></label>
-      <label class="field" style="margin-top:0"><span>النوم (ساعات)</span><input id="fL" class="inp num" inputmode="decimal" value="${my.sleepMin ? r1(my.sleepMin / 60) : ''}" placeholder="7.5"></label>
+      <label class="field" style="margin-top:0"><span>السعرات (النشاط)</span><input id="fK" class="inp num" inputmode="numeric" value="${my.active ?? ''}" placeholder="${hy.zactive ?? ''}"></label>
+      <label class="field" style="margin-top:0"><span>نوم الليلة (ساعات)</span><input id="fL" class="inp num" inputmode="decimal" value="${m.sleepMin ? r1(m.sleepMin / 60) : ''}" placeholder="${h.zsleep ? r1(h.zsleep / 60) : '7.5'}"></label>
     </div>
-    <p class="muted small">الأرقام دي في شاشة "صحة" في Zepp Active. لو سبتها فاضية التطبيق بياخد خطوات الموبايل.</p>
+    <p class="muted small">${zeppState.enabled ? 'الأرقام دي بتتقرا لوحدها من الساعة – اكتب بس لو عايز تصحّح.' : 'من شاشة "صحة" في Zepp Active. السعرات هناك = النشاط بس، والتطبيق بيزوّد حرق الراحة لوحده.'}</p>
     <label class="field"><span>ملاحظة (وجع، نوم وحش، أكل برة…)</span><textarea id="fN" class="inp">${esc(m.note || '')}</textarea></label>
     <button class="btn red block mt" id="fSave">حفظ</button>`, p => {
     $('#fSave', p).onclick = () => {
@@ -340,8 +400,8 @@ function dayEntrySheet(d) {
       const x = day(d), xy = day(y);
       const w = num('#fW'); if (w && w > 30 && w < 250) x.w = w; else delete x.w;
       const st = num('#fS'); if (st != null && st >= 0) xy.steps = Math.round(st); else delete xy.steps;
-      const k = num('#fK'); if (k != null && k > 500) xy.kcal = Math.round(k); else delete xy.kcal;
-      const l = num('#fL'); if (l != null && l > 0 && l < 16) xy.sleepMin = Math.round(l * 60); else delete xy.sleepMin;
+      const k = num('#fK'); if (k != null && k >= 0) { xy.active = Math.round(k); delete xy.kcal; } else delete xy.active;
+      const l = num('#fL'); if (l != null && l > 0 && l < 16) x.sleepMin = Math.round(l * 60); else delete x.sleepMin;
       x.note = $('#fN', p).value.trim() || undefined; save(); closeSheet(); render(); toast('اتسجّل ✓');
     };
   });
@@ -689,7 +749,7 @@ function weeklyReport() {
   const now = avgWeight(t), prev = avgWeight(addDays(t, -7));
   const lines = [`# تقرير الأسبوع ${wk} – كوتش الجيم`, `الفترة: ${addDays(t, -6)} → ${t}`, ''];
   lines.push('## الوزن والنشاط');
-  const daily = []; for (let i = 6; i >= 0; i--) { const d = addDays(t, -i); const e = eff(d); daily.push(`${short(d)}: ${e.w ?? '—'} كجم · ${e.steps ?? '—'} خطوة · حرق ${e.kcal ?? '—'} · نوم ${e.sleep ? (e.sleep / 60).toFixed(1) + 'س' : '—'}${e.creatine ? ' · كرياتين✓' : ''}`); }
+  const daily = []; for (let i = 6; i >= 0; i--) { const d = addDays(t, -i); const e = eff(d); daily.push(`${short(d)}: ${e.w ?? '—'} كجم · ${e.steps ?? '—'} خطوة · نشاط ${e.active ?? '—'} · حرق تقديري ${e.kcal ?? '—'} · نوم ${e.sleep ? (e.sleep / 60).toFixed(1) + 'س' : '—'}${e.creatine ? ' · كرياتين✓' : ''}`); }
   lines.push(`- متوسط الوزن: ${now ? fmt(now.avg, 2) : '—'} (الأسبوع اللي فات ${prev ? fmt(prev.avg, 2) : '—'})`);
   lines.push(`- متوسط الخطوات: ${fmt(avgOf('steps', t))} (الهدف ${set.steps}) · متوسط الحرق: ${fmt(avgOf('kcal', t))} · متوسط النوم: ${avgOf('sleep', t) ? (avgOf('sleep', t) / 60).toFixed(1) + ' ساعة' : '—'}`);
   lines.push(...daily.map(x => '  - ' + x));
@@ -741,7 +801,7 @@ function foodSwapSheet(id) {
 function renderMenu(el) {
   const rows = [
     ['user', 'ملفي وأهدافي', profileSheet, `${S.settings.kcal} سعر`],
-    ['heart', 'Health Connect (Zepp + الميزان)', hcSheet, native ? (S.settings.lastSync ? 'مربوط' : 'مش مربوط') : ''],
+    ['heart', 'الساعة + Health Connect', hcSheet, native ? (S.settings.lastSync ? 'مربوط' : 'مش مربوط') : ''],
     ['scale', 'سجل الأوزان', weightsSheet, ''],
     ['ruler', 'القياسات وتحليل الميزان', bodySheet, ''],
     ['report', 'تقرير الأسبوع للكابتن', () => copyText(weeklyReport()), ''],
@@ -772,12 +832,14 @@ function profileSheet() {
 function hcSheet() {
   openSheet(sheetHead('Health Connect', 'Zepp + ميزان OKOK') + (native ? `
     <p style="line-height:1.8">التطبيق بيقرا من Health Connect: الخطوات، الحرق الكلي، النوم، النبض وقت الراحة، الوزن ونسبة الدهون. مبيكتبش حاجة.</p>
-    <div class="note"><span class="i">1</span><span><b>الساعة:</b> تطبيق Zepp Active (ساعات Pop) مبيبعتش لـ Health Connect على أندرويد، فالخطوات بتيجي من الموبايل وGoogle Fit، والحرق والنوم بتسجلهم الصبح من شاشة "تسجيل الصبح".</span></div>
+    <div class="note"><span class="i">1</span><span><b>الساعة:</b> Zepp Active مبيبعتش لـ Health Connect، فكوتش الجيم بيقرا أرقامه من الشاشة مباشرة.</span></div>
+    <button class="btn red block mt sm" id="hcZ">إعداد قراءة الساعة</button>
     <div class="note mt"><span class="i">2</span><span><b>OKOK:</b> لو فيه ربط بـ Google Fit فعّله، وفي Google Fit فعّل "Sync Fit with Health Connect". لو مفيش، سجّل الوزن يدوي من الرئيسية.</span></div>
     <button class="btn red block mt" id="hc1">اربط / حدّث الأذونات</button>
     <button class="btn ghost block mt" id="hc2">افتح إعدادات Health Connect</button>
     <button class="btn ghost block mt" id="hc3">حدّث البيانات دلوقتي</button>` : '<p>الجزء ده بيشتغل في تطبيق الأندرويد بس.</p>'), p => {
     if (!native) return;
+    $('#hcZ', p).onclick = () => { closeSheet(); zeppSetupSheet(); };
     $('#hc1', p).onclick = async () => { closeSheet(); await hcConnect(); };
     $('#hc2', p).onclick = () => { try { Health.openHealthConnectSettings(); } catch (e) { toast('مقدرتش أفتح الإعدادات'); } };
     $('#hc3', p).onclick = () => { closeSheet(); hcSync(true); };
@@ -820,10 +882,12 @@ function backupSheet() {
 if (S.active && S.active.w) { tab = 'workout'; render(); startPlayer(S.active.w, S.active.dk); }
 else render();
 if (native && S.settings.lastSync) hcSync(false);
+if (Zepp) zeppPull().then(() => { if ($('#player').hidden) render(); });
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState !== 'visible') return;
   if (P) { tickPlayer(); keepAwake(true); }
-  else if (native && S.settings.lastSync) { const m = (Date.now() - new Date(S.settings.lastSync)) / 6e4; if (m > 15) hcSync(false); }
+  if (Zepp && !P) zeppPull().then(() => { if ($('#player').hidden) render(); });
+  if (!P && native && S.settings.lastSync) { const m = (Date.now() - new Date(S.settings.lastSync)) / 6e4; if (m > 15) hcSync(false); }
 });
 // زرار الرجوع في أندرويد
 try {
