@@ -397,11 +397,11 @@ async function gainSheet() {
   const nSets = dates.reduce((a, d) => a + Object.values(data[d]).reduce((x, arr) => x + arr.length, 0), 0);
   const names = [...new Set(dates.flatMap(d => Object.keys(data[d])))];
   const mapped = names.filter(n => !gainLk(n).startsWith('gain:'));
-  const st = { waiting: 'مستني تفتح سجل الأوزان', running: 'شغال…', done: '✓ خلص', timeout: 'وقف (الوقت خلص)', left: 'وقف (خرجت من التطبيق)', month: 'وقف عند تغيير الشهر', strip: 'وقف (مش لاقي اليوم في الشريط)' }[g.status] || '';
+  const st = { waiting: 'مستني تفتح سجل الأوزان', running: 'شغال…', done: '✓ خلص', timeout: 'وقف (الوقت خلص)', left: 'وقف (خرجت من التطبيق)', month: 'وقف عند تغيير الشهر', strip: 'وقف (مش لاقي اليوم في الشريط)', week: 'وقف عند سهم الأسبوع اللي فات' }[g.status] || '';
   openSheet(sheetHead('استيراد من The Gain Universe', 'سجل التمارين القديم') + `
     ${!zeppState.enabled ? '<div class="note warn"><span class="i">!</span><span>خدمة "كوتش الجيم – قراءة الساعة" لازم تبقى شغالة الأول.</span></div>' : ''}
     <div class="note mt"><span class="i">1</span><span>اضغط <b>ابدأ</b> ← هيفتح The Gain Universe.</span></div>
-    <div class="note mt"><span class="i">2</span><span>ادخل <b>☰ ← سجل الأوزان</b> وسيب الموبايل. التطبيق هيفتح كل تمرين ويقرا، ويرجع يوم يوم لورا لوحده. ممكن ياخد كام دقيقة.</span></div>
+    <div class="note mt"><span class="i">2</span><span>ادخل <b>☰ ← سجل الأوزان</b> وسيب الموبايل. التطبيق هيدوس على كل يوم، يفتح كل تمرين ويقرا، ولما الأسبوع يخلص يدوس السهم اللي فوق للأسبوع اللي فات. ممكن ياخد كام دقيقة.</span></div>
     <div class="note mt"><span class="i">3</span><span>هيرجعك هنا لما يخلص. اضغط <b>استورد</b>.</span></div>
     <label class="field"><span>ارجع لحد تاريخ (اختياري)</span><input id="gE" class="inp num" type="date" value=""></label>
     <button class="btn red block mt" id="gGo">ابدأ</button>

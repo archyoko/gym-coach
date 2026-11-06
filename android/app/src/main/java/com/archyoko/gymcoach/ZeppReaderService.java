@@ -372,10 +372,11 @@ public class ZeppReaderService extends AccessibilityService {
         if (!onLog) return;
         // ابدأ
         gRunning = true; gPhase = 0; gScrolls = 0; gTries = 0; gEmpty = 0; gDays = 0; gMonthTries = 0;
-        gGotAny = false; gStarted = System.currentTimeMillis(); gCursor = today();
+        gGotAny = false; gStarted = System.currentTimeMillis(); gCursor = shift(today(), 1); gWeekCheck = null; pressLater = false;
         gExpanded.clear(); gDaySeen.clear();
         try { gData = new JSONObject(p.getString("gain", "{}")); } catch (Exception e) { gData = new JSONObject(); }
         p.edit().putBoolean("gainRequested", false).putString("gainStatus", "running").apply();
+        gPhase = 1;   // أول خطوة: اضغط على النهارده
         handler.postDelayed(gainStep, 1200);
     }
 
@@ -453,7 +454,11 @@ public class ZeppReaderService extends AccessibilityService {
             for (String m : AR_MON) if (it.text.startsWith(m)) { monthItem = it; break; }
             if (it.text.contains("عدد المجموعات") && listTop == 0) { stripBottom = it.r.top; listTop = it.r.bottom; }
         }
-        if (listTop == 0) { listTop = root == null ? 0 : 900; stripBottom = listTop; }
+        int H = getResources().getDisplayMetrics().heightPixels;
+        if (listTop == 0) {
+            stripBottom = monthItem != null ? monthItem.r.bottom + (int) (H * 0.18) : (int) (H * 0.4);
+            listTop = stripBottom;
+        }
 
         if (gPhase == 0) {
             // 1) افتح أول تمرين مقفول
@@ -488,63 +493,78 @@ public class ZeppReaderService extends AccessibilityService {
         }
 
         if (gPhase == 1) {
-            // روح لليوم اللي قبله
-            Calendar c = Calendar.getInstance();
-            String[] pr = gCursor.split("-");
-            c.set(Integer.parseInt(pr[0]), Integer.parseInt(pr[1]) - 1, Integer.parseInt(pr[2]));
-            c.add(Calendar.DAY_OF_MONTH, -1);
-            String target = String.format(Locale.US, "%04d-%02d-%02d", c.get(Calendar.YEAR), c.get(Calendar.MONTH) + 1, c.get(Calendar.DAY_OF_MONTH));
-            int tMonth = c.get(Calendar.MONTH), tDay = c.get(Calendar.DAY_OF_MONTH);
-            // الشهر المعروض
-            int shown = -1;
-            if (monthItem != null) for (int m = 0; m < 12; m++) if (monthItem.text.startsWith(AR_MON[m])) shown = m;
-            if (shown >= 0 && shown != tMonth) {
-                if (++gMonthTries > 4) { gainStop("month"); return; }
-                // أسهم الشهر: عناصر قابلة للضغط في نفس سطر الشهر
-                Item best = null;
-                List<AccessibilityNodeInfo> st = new ArrayList<>(); st.add(root);
-                while (!st.isEmpty()) {
-                    AccessibilityNodeInfo x = st.remove(st.size() - 1); if (x == null) continue;
-                    if (x.isClickable()) {
-                        Rect r = new Rect(); x.getBoundsInScreen(r);
-                        if (Math.abs(r.centerY() - monthItem.r.centerY()) < monthItem.r.height() * 2 && r.width() < monthItem.r.width() * 2) {
-                            boolean prevSide = ((shown - tMonth + 12) % 12) <= 6 ? r.centerX() > monthItem.r.right : r.centerX() < monthItem.r.left;
-                            if (gMonthTries > 2) prevSide = !prevSide; // لو الاتجاه طلع غلط جرّب التاني
-                            if (prevSide) { Item it = new Item("", r); it.node = x; best = it; }
-                        }
-                    }
-                    for (int i = 0; i < x.getChildCount(); i++) st.add(x.getChild(i));
-                }
-                if (best == null) {
-                    // مفيش أسهم ظاهرة كعناصر – اضغط على الطرف
-                    int x = ((shown - tMonth + 12) % 12) <= 6 ? monthItem.r.right + monthItem.r.width() : monthItem.r.left - monthItem.r.width();
-                    if (gMonthTries > 2) x = 2 * monthItem.r.centerX() - x;
-                    tapAt(Math.max(10, x), monthItem.r.centerY());
-                } else tap(best);
-                handler.postDelayed(gainStep, 1400); return;
+            // اليوم اللي قبله
+            String target = shift(gCursor, -1);
+            int tDay = dayNum(target);
+            java.util.Map<Integer, Item> chips = chips(items, monthItem, stripBottom);
+            if (chips.containsKey(tDay)) {
+                tap(chips.get(tDay)); gCursor = target; gPhase = 0; gScrolls = 0; gExpanded.clear(); gTries = 0; gWeekCheck = null;
+                handler.postDelayed(gainStep, 1500); return;
             }
-            // دوّر على رقم اليوم في الشريط
-            for (Item it : items) {
-                if (it.r.bottom > stripBottom + 5 || (monthItem != null && it.r.top <= monthItem.r.bottom)) continue;
-                if (it.text.equals(String.valueOf(tDay))) {
-                    tap(it); gCursor = target; gPhase = 0; gScrolls = 0; gExpanded.clear(); gTries = 0;
-                    handler.postDelayed(gainStep, 1500); return;
-                }
+            // مش في الأسبوع ده: لو لسه دايسين السهم شوف رحنا قدام ولا ورا
+            if (gWeekCheck != null) {
+                boolean back = chips.containsKey(dayNum(shift(gWeekCheck, -7)));
+                boolean fwd = chips.containsKey(dayNum(shift(gWeekCheck, 7))) && !back;
+                if (fwd) { gArrowLeft = !gArrowLeft; prefs().edit().putBoolean("gainArrowLeft", gArrowLeft).apply(); pressWeekArrow(root, monthItem); pressLater = true; }
             }
-            // مش ظاهر – حرّك الشريط
-            if (++gTries > 8) { gainStop("strip"); return; }
-            AccessibilityNodeInfo strip = stripScroll(root, monthItem != null ? monthItem.r.bottom : 0, stripBottom + 10);
-            boolean moved = false;
-            if (strip != null) moved = strip.performAction(gTries % 2 == 1 ? AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD : AccessibilityNodeInfo.ACTION_SCROLL_FORWARD);
-            if (!moved && monthItem != null && Build.VERSION.SDK_INT >= 24) {
-                int y = (monthItem.r.bottom + stripBottom) / 2;
-                android.graphics.Path path = new android.graphics.Path();
-                int w = getResources().getDisplayMetrics().widthPixels;
-                if (gTries % 2 == 1) { path.moveTo(w * 0.15f, y); path.lineTo(w * 0.85f, y); } else { path.moveTo(w * 0.85f, y); path.lineTo(w * 0.15f, y); }
-                dispatchGesture(new android.accessibilityservice.GestureDescription.Builder().addStroke(new android.accessibilityservice.GestureDescription.StrokeDescription(path, 0, 350)).build(), null, null);
-            }
-            handler.postDelayed(gainStep, 1100);
+            if (pressLater) { pressLater = false; pressWeekArrow(root, monthItem); handler.postDelayed(gainStep, 1400); return; }
+            if (++gTries > 6) { gainStop("week"); return; }
+            gWeekCheck = gCursor;
+            pressWeekArrow(root, monthItem);
+            handler.postDelayed(gainStep, 1400);
         }
+    }
+
+    private String gWeekCheck = null;
+    private boolean pressLater = false;
+    private boolean gArrowLeft = false;
+
+    private static String shift(String d, int n) {
+        String[] pr = d.split("-");
+        Calendar c = Calendar.getInstance();
+        c.set(Integer.parseInt(pr[0]), Integer.parseInt(pr[1]) - 1, Integer.parseInt(pr[2]));
+        c.add(Calendar.DAY_OF_MONTH, n);
+        return String.format(Locale.US, "%04d-%02d-%02d", c.get(Calendar.YEAR), c.get(Calendar.MONTH) + 1, c.get(Calendar.DAY_OF_MONTH));
+    }
+    private static int dayNum(String d) { return Integer.parseInt(d.substring(8)); }
+
+    /** أرقام الأيام الظاهرة في الشريط (الرقم لوحده أو جنب اسم اليوم) */
+    private java.util.Map<Integer, Item> chips(List<Item> items, Item monthItem, int stripBottom) {
+        java.util.Map<Integer, Item> m = new java.util.HashMap<>();
+        Pattern num = Pattern.compile("(?:^|\\s)(\\d{1,2})(?:\\s|$)");
+        for (Item it : items) {
+            if (monthItem != null && it.r.top <= monthItem.r.bottom) continue;
+            if (stripBottom > 0 && it.r.top >= stripBottom) continue;
+            if (it.text.length() > 20) continue;
+            Matcher mm = num.matcher(it.text);
+            if (mm.find()) {
+                int d = Integer.parseInt(mm.group(1));
+                if (d >= 1 && d <= 31 && !m.containsKey(d)) m.put(d, it);
+            }
+        }
+        return m;
+    }
+
+    /** سهم الأسبوع اللي فات جنب اسم الشهر */
+    private void pressWeekArrow(AccessibilityNodeInfo root, Item monthItem) {
+        gArrowLeft = prefs().getBoolean("gainArrowLeft", gArrowLeft);
+        int w = getResources().getDisplayMetrics().widthPixels;
+        int y = monthItem != null ? monthItem.r.centerY() : (int) (getResources().getDisplayMetrics().heightPixels * 0.18);
+        Item best = null; int bestDx = Integer.MAX_VALUE;
+        List<AccessibilityNodeInfo> st = new ArrayList<>(); st.add(root);
+        while (!st.isEmpty()) {
+            AccessibilityNodeInfo x = st.remove(st.size() - 1); if (x == null) continue;
+            if (x.isClickable()) {
+                Rect r = new Rect(); x.getBoundsInScreen(r);
+                boolean sameRow = Math.abs(r.centerY() - y) < Math.max(60, monthItem != null ? monthItem.r.height() * 2 : 60);
+                boolean side = gArrowLeft ? r.centerX() < w / 2 : r.centerX() > w / 2;
+                boolean small = r.width() < w / 3;
+                if (sameRow && side && small) { int dx = Math.abs(r.centerX() - w / 2); if (dx < bestDx) { bestDx = dx; best = new Item("", r); best.node = x; } }
+            }
+            for (int i = 0; i < x.getChildCount(); i++) st.add(x.getChild(i));
+        }
+        if (best != null) tap(best);
+        else tapAt(gArrowLeft ? (int) (w * 0.19) : (int) (w * 0.79), y);
     }
 
     /** لكل تمرين ظاهر: السطور اللي تحته لحد التمرين اللي بعده. بنحتفظ بأطول قايمة اتشافت (عشان السكرول ميكررش) */
