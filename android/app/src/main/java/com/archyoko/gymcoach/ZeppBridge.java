@@ -34,6 +34,7 @@ public class ZeppBridge extends Plugin {
         r.put("lastRead", p.getLong("lastRead", 0));
         r.put("enabled", enabled());
         r.put("installed", installed());
+        r.put("auto", p.getBoolean("auto", true));
         call.resolve(r);
     }
 
@@ -54,10 +55,16 @@ public class ZeppBridge extends Plugin {
     }
 
     @PluginMethod
+    public void setAuto(PluginCall call) {
+        prefs().edit().putBoolean("auto", call.getBoolean("enabled", true)).apply();
+        call.resolve();
+    }
+
+    @PluginMethod
     public void fetchNow(PluginCall call) {
         Intent i = getContext().getPackageManager().getLaunchIntentForPackage(ZeppReaderService.ZEPP);
         if (i == null) { call.reject("Zepp Active مش متسطّب"); return; }
-        prefs().edit().putBoolean("requested", true).putLong("requestedAt", System.currentTimeMillis()).apply();
+        prefs().edit().putBoolean("requested", true).putString("mode", "manual").putLong("requestedAt", System.currentTimeMillis()).apply();
         i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         getContext().startActivity(i);
         call.resolve();

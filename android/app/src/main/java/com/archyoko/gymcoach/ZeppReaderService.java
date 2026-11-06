@@ -1,7 +1,12 @@
 package com.archyoko.gymcoach;
 
 import android.accessibilityservice.AccessibilityService;
+import android.content.BroadcastReceiver;
+import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
+import android.os.Build;
+import java.util.Calendar;
 import android.content.SharedPreferences;
 import android.graphics.Rect;
 import android.os.Handler;
@@ -45,6 +50,44 @@ public class ZeppReaderService extends AccessibilityService {
 
     @Override
     public void onInterrupt() { }
+
+    /* ---------- القراءة الأوتوماتيك: أول فتح للموبايل الصبح وبالليل ---------- */
+    private final BroadcastReceiver unlock = new BroadcastReceiver() {
+        @Override public void onReceive(Context c, Intent i) { handler.postDelayed(ZeppReaderService.this::maybeAuto, 1500); }
+    };
+
+    @Override
+    protected void onServiceConnected() {
+        super.onServiceConnected();
+        IntentFilter f = new IntentFilter(Intent.ACTION_USER_PRESENT);
+        try {
+            if (Build.VERSION.SDK_INT >= 33) registerReceiver(unlock, f, Context.RECEIVER_EXPORTED);
+            else registerReceiver(unlock, f);
+        } catch (Exception ignored) { }
+    }
+
+    @Override
+    public void onDestroy() {
+        try { unregisterReceiver(unlock); } catch (Exception ignored) { }
+        super.onDestroy();
+    }
+
+    /** الصبح (5–12): يجيب نوم الليلة. بالليل (9–12): يجيب خطوات وسعرات اليوم كاملة. مرة واحدة لكل فترة. */
+    private void maybeAuto() {
+        SharedPreferences p = prefs();
+        if (!p.getBoolean("auto", true) || p.getBoolean("requested", false)) return;
+        int h = Calendar.getInstance().get(Calendar.HOUR_OF_DAY);
+        String slot = h >= 5 && h < 12 ? "am" : h >= 21 ? "pm" : null;
+        if (slot == null) return;
+        String key = today() + "-" + slot;
+        if (key.equals(p.getString("lastAuto", ""))) return;
+        Intent i = getPackageManager().getLaunchIntentForPackage(ZEPP);
+        if (i == null) return;
+        p.edit().putString("lastAuto", key).putBoolean("requested", true).putString("mode", "auto")
+                .putLong("requestedAt", System.currentTimeMillis()).apply();
+        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        try { startActivity(i); } catch (Exception e) { p.edit().putBoolean("requested", false).apply(); }
+    }
 
     private SharedPreferences prefs() { return getSharedPreferences(PREFS, MODE_PRIVATE); }
 
@@ -118,8 +161,18 @@ public class ZeppReaderService extends AccessibilityService {
         Integer steps = numberNear(items, new String[]{"خطوات", "الخطوات", "Steps", "steps"});
         Integer active = numberNear(items, new String[]{"سعرات حرارية", "سعرات", "السعرات", "Calories", "calories", "kcal"});
         Integer sleepMin = null, hr = null;
-        Matcher m = Pattern.compile("(\\d{1,2})\\s*(hr|h|ساعة|ساعات|س)\\s*(\\d{1,2})\\s*(min|m|دقيقة|دقائق|د)").matcher(all);
-        if (m.find()) sleepMin = Integer.parseInt(m.group(1)) * 60 + Integer.parseInt(m.group(3));
+        String sleepDate = null;
+        Matcher m = Pattern.compile("(\\d{1,2})\\s*(hr|h|ساعة|ساعات|س)\\s*(\\d{1,2})\\s*(min|m|دقيقة|دقائق|د)(?:[^0-9]{0,20}(\\d{2})/(\\d{2}))?").matcher(all);
+        if (m.find()) {
+            sleepMin = Integer.parseInt(m.group(1)) * 60 + Integer.parseInt(m.group(3));
+            if (m.group(5) != null) {
+                int dd = Integer.parseInt(m.group(5)), mm = Integer.parseInt(m.group(6));
+                Calendar c = Calendar.getInstance();
+                int y = c.get(Calendar.YEAR);
+                if (mm > c.get(Calendar.MONTH) + 1) y--; // نوم ديسمبر وإحنا في يناير
+                sleepDate = String.format(Locale.US, "%04d-%02d-%02d", y, mm, dd);
+            }
+        }
         Matcher mh = Pattern.compile("(?:bpm\\s*(\\d{2,3}))|(?:(\\d{2,3})\\s*bpm)").matcher(all);
         if (mh.find()) hr = Integer.parseInt(mh.group(1) != null ? mh.group(1) : mh.group(2));
 
@@ -130,7 +183,12 @@ public class ZeppReaderService extends AccessibilityService {
             if (day == null) day = new JSONObject();
             if (steps != null && steps >= day.optInt("steps", -1)) day.put("steps", steps);
             if (active != null && active >= day.optInt("active", -1)) day.put("active", active);
-            if (sleepMin != null && sleepMin > 0) day.put("sleepMin", sleepMin);
+            if (sleepMin != null && sleepMin > 0) {
+                String sd = sleepDate != null ? sleepDate : d;   // النوم بيتسجل على يوم الصحيان
+                JSONObject sday = sd.equals(d) ? day : data.optJSONObject(sd);
+                if (sday == null) { sday = new JSONObject(); data.put(sd, sday); }
+                sday.put("sleepMin", sleepMin);
+            }
             if (hr != null) day.put("hr", hr);
             if (steps != null || active != null || sleepMin != null) day.put("ts", System.currentTimeMillis());
             data.put(d, day);
@@ -154,7 +212,15 @@ public class ZeppReaderService extends AccessibilityService {
         } catch (Exception ignored) { }
 
         if (!requested) return;
-        boolean timedOut = System.currentTimeMillis() - reqAt > 20000;
+        boolean auto = "auto".equals(p.getString("mode", ""));
+        boolean timedOut = System.currentTimeMillis() - reqAt > 25000;
+        boolean morning = Calendar.getInstance().get(Calendar.HOUR_OF_DAY) < 12;
+        boolean sleepFresh = sleepMin != null && (sleepDate == null || sleepDate.equals(today()));
+        if (morning && sleepMin != null && !sleepFresh && !timedOut) {
+            // الساعة لسه بتعمل مزامنة – النوم القديم ظاهر. استنى شوية واقرا تاني
+            handler.postDelayed(captureTask, 2500);
+            return;
+        }
         if (sleepMin == null && scrolls < 3 && !timedOut) {
             // النوم تحت – انزل شوية واقرا تاني
             AccessibilityNodeInfo sc = findScrollable(root);
@@ -169,7 +235,8 @@ public class ZeppReaderService extends AccessibilityService {
             if (sc != null) sc.performAction(AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD);
         }
         scrolls = 0;
-        p.edit().putBoolean("requested", false).apply();
+        p.edit().putBoolean("requested", false).putString("mode", "").apply();
+        if (auto) { performGlobalAction(GLOBAL_ACTION_BACK); return; }   // يرجعك للي كنت فيه
         Intent i = new Intent(this, MainActivity.class);
         i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT | Intent.FLAG_ACTIVITY_SINGLE_TOP);
         try { startActivity(i); } catch (Exception ignored) { }

@@ -221,7 +221,7 @@ async function zeppPull() {
   if (!Zepp) return false;
   try {
     const r = await Zepp.getData();
-    zeppState = { enabled: !!r.enabled, installed: !!r.installed, lastRead: r.lastRead || 0, raw: r.raw || '' };
+    zeppState = { enabled: !!r.enabled, installed: !!r.installed, lastRead: r.lastRead || 0, raw: r.raw || '', auto: r.auto !== false };
     const data = JSON.parse(r.data || '{}');
     for (const [d, v] of Object.entries(data)) {
       if (d === 'workouts') continue;
@@ -251,12 +251,16 @@ function zeppSetupSheet() {
     <button class="btn ghost block mt sm" id="z2">افتح إمكانية الوصول</button>
     <div class="note mt"><span class="i">3</span><span>ارجع هنا واضغط <b>جرّب دلوقتي</b>. هيفتح Zepp Active ويرجعك لوحده.</span></div>
     <button class="btn red block mt" id="z3">جرّب دلوقتي</button>
+    <div class="section-t">أوتوماتيك كل يوم</div>
+    <p style="line-height:1.8;margin:0">أول ما تفتح قفل الموبايل <b>الصبح</b> (من 5 لـ 12) بيجيب نوم الليلة، وأول ما تفتحه <b>بالليل</b> (بعد 9) بيجيب خطوات وسعرات اليوم كاملة. Zepp Active هيظهر 3–5 ثواني ويقفل لوحده ويرجعك للي كنت فيه.</p>
+    <button class="btn ${zeppState.auto ? 'ghost' : 'red'} block mt sm" id="z5">${zeppState.auto ? '✓ الأوتوماتيك شغال – اضغط تقفله' : 'شغّل الأوتوماتيك'}</button>
     <p class="muted small mt">حالة الخدمة: ${zeppState.enabled ? '✓ شغالة' : '✗ مش شغالة لسه'}${zeppState.lastRead ? ` · آخر قراءة ${new Date(zeppState.lastRead).toLocaleTimeString('ar-EG', { hour: 'numeric', minute: '2-digit' })}` : ''}</p>
     ${zeppState.raw ? '<button class="btn ghost block sm" id="z4">انسخ اللي اتقرا (لو الأرقام غلط ابعتهولي)</button>' : ''}`, p => {
     $('#z1', p).onclick = () => Zepp && Zepp.openAppInfo();
     $('#z2', p).onclick = () => Zepp && Zepp.openSettings();
     $('#z3', p).onclick = async () => { await zeppPull(); if (!zeppState.enabled) { toast('الخدمة لسه مش شغالة – اعمل خطوة 2'); return; } closeSheet(); zeppFetch(); };
     const z4 = $('#z4', p); if (z4) z4.onclick = () => copyText(zeppState.raw);
+    $('#z5', p).onclick = async () => { try { await Zepp.setAuto({ enabled: !zeppState.auto }); } catch (e) { } await zeppPull(); closeSheet(); zeppSetupSheet(); };
   });
 }
 
