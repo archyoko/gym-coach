@@ -56,7 +56,11 @@ function load() {
   for (const k of ['days', 'health', 'logs', 'body', 'swaps', 'foodSwaps', 'photos']) raw[k] = raw[k] || {};
   return raw;
 }
-function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { toast('مقدرتش أحفظ – المساحة مليانة؟'); } }
+function save(fromCloud) {
+  if (!fromCloud) { S.meta = S.meta || {}; S.meta.updated = Date.now(); }
+  try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { toast('مقدرتش أحفظ – المساحة مليانة؟'); }
+  if (!fromCloud && typeof cloudSoon === 'function') cloudSoon();
+}
 S = load();
 // قراءة الميزان يوم 31/10 من صور OKOK
 if (!S.body['2026-10-31']) { S.body['2026-10-31'] = { weight: 88.65, bmi: 30.7, fat: 29.5, fatKg: 26.2, skm: 36.5, skmKg: 32.4, muscle: 67.6, muscleKg: 60.0, water: 51.7, waterKg: 45.8, visceral: 16.5, bone: 2.47, bmr: 1812, protein: 16.0, lean: 62.49, metaAge: 43, src: 'okok' }; }
@@ -387,6 +391,70 @@ async function restNotify(untilMs, body) {
   try { await LN.cancel({ notifications: [{ id: REST_ID }] }); await LN.schedule({ notifications: [{ id: REST_ID, title: 'خلصت الراحة 💪', body, schedule: { at: new Date(untilMs), allowWhileIdle: true }, isExactNotification: true }] }); } catch (e) { }
 }
 async function restCancel() { if (!LN) return; try { await LN.cancel({ notifications: [{ id: REST_ID }] }); } catch (e) { } }
+/* ================= النسخة على Google Drive ================= */
+let cloudT = null, cloudBusy = false, cloudInfo = { linked: false, name: '' };
+function cloudSoon(ms = 20000) { try { if (!Zepp || !cloudInfo.linked) return; clearTimeout(cloudT); cloudT = setTimeout(cloudPush, ms); } catch (e) { } }
+const blobToData = b => new Promise(res => { const r = new FileReader(); r.onload = () => res(r.result); r.readAsDataURL(b); });
+async function cloudPayload() {
+  const photos = {};
+  for (const d of photoDates()) for (const [k] of POSES) { const b = await pGet(d + '|' + k).catch(() => null); if (b) photos[d + '|' + k] = await blobToData(b); }
+  return JSON.stringify({ app: 'gym-coach', v: 2, saved: Date.now(), state: Object.assign({}, S, { active: null }), photos });
+}
+async function cloudPush(loud) {
+  if (!Zepp || !cloudInfo.linked || cloudBusy) return false;
+  cloudBusy = true;
+  try { await Zepp.writeBackup({ data: await cloudPayload() }); S.meta = S.meta || {}; S.meta.pushed = Date.now(); save(true); if (loud) toast('اتحفظت على Drive ✓'); return true; }
+  catch (e) { if (loud) toast(e.message || 'الحفظ على Drive فشل'); return false; }
+  finally { cloudBusy = false; }
+}
+async function cloudRead() { const r = await Zepp.readBackup(); const j = JSON.parse(r.data || '{}'); if (j.app !== 'gym-coach' || !j.state) throw new Error('الملف ده مش نسخة كوتش الجيم'); return j; }
+async function cloudApply(j) {
+  S = Object.assign(load(), j.state); S.meta = S.meta || {}; S.meta.updated = j.saved; S.meta.pushed = j.saved; save(true);
+  for (const [k, data] of Object.entries(j.photos || {})) { try { const b = await (await fetch(data)).blob(); await pPut(k, b); delete urlCache[k]; } catch (e) { } }
+}
+/* لما التطبيق يتفتح: لو النسخة اللي على Drive أحدث (اتعدّلت من جهاز تاني) هاتها */
+async function cloudPullIfNewer() {
+  if (!Zepp) return;
+  try { cloudInfo = await Zepp.backupInfo(); } catch (e) { return; }
+  if (!cloudInfo.linked) return;
+  try {
+    const j = await cloudRead();
+    const localChanged = (S.meta && S.meta.updated || 0) > (S.meta && S.meta.pushed || 0);
+    if (j.saved > (S.meta && S.meta.pushed || 0) + 1000 && !localChanged) { await cloudApply(j); render(); toast('اتحدّثت البيانات من Drive ✓'); }
+    else if (localChanged) cloudSoon(3000);
+  } catch (e) { }
+}
+async function cloudSheet() {
+  if (!Zepp) { toast('شغال في تطبيق الأندرويد بس'); return; }
+  try { cloudInfo = await Zepp.backupInfo(); } catch (e) { }
+  const onDrive = /google|drive/i.test(cloudInfo.authority || '');
+  const last = S.meta && S.meta.pushed;
+  openSheet(sheetHead('المزامنة مع Google Drive', 'حسابك على الجيميل') + (cloudInfo.linked ? `
+    <div class="verdict ${onDrive ? 'ok' : 'warn'}"><h3>${onDrive ? '✓ مربوط بـ Google Drive' : 'مربوط بملف على الموبايل'}</h3><p>${esc(cloudInfo.name)}${last ? ` · آخر حفظ ${new Date(last).toLocaleString('ar-EG', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}` : ''}</p></div>
+    ${onDrive ? '' : '<p class="muted small">الملف ده مش على Drive، فلو الموبايل ضاع هيضيع معاه. اربط ملف جديد واختار Drive.</p>'}
+    <p style="line-height:1.8">كل تعديل بيتحفظ على الملف لوحده بعد ثواني، وفيه كل حاجة: التمارين والأكل والوزن والميزان والصور.</p>
+    <button class="btn red block" id="c1">احفظ دلوقتي</button>
+    <button class="btn ghost block mt sm" id="c2">رجّع البيانات من الملف</button>
+    <button class="btn ghost block mt sm" id="c4">غيّر الملف</button>
+    <button class="btn ghost block mt sm" id="c5">فك الربط</button>` : `
+    <p style="line-height:1.8">البيانات بتتحفظ في ملف على <b>Google Drive</b> بتاعك (نفس حساب الجيميل). لو غيّرت الموبايل أو مسحت التطبيق، تسطّبه وتختار الملف، وكل حاجة ترجع.</p>
+    <div class="note"><span class="i">1</span><span><b>أول مرة:</b> اضغط الزرار الأحمر ← هتفتح قايمة الملفات ← اضغط <b>☰</b> واختار <b>Drive</b> (arch.mhossam@…) ← <b>حفظ</b>.</span></div>
+    <button class="btn red block mt" id="c3">اعمل ملف على Drive</button>
+    <div class="note mt"><span class="i">2</span><span><b>موبايل جديد:</b> اضغط ده ← اختار Drive ← افتح <b>gym-coach-backup.json</b>.</span></div>
+    <button class="btn ghost block mt" id="c6">عندي ملف على Drive – رجّع بياناتي</button>`), p => {
+    const pick = async create => {
+      try { const r = await Zepp.pickBackup({ create }); cloudInfo = { linked: true, name: r.name, authority: r.authority }; } catch (e) { toast(e.message || 'اتلغى'); return null; }
+      return true;
+    };
+    const b3 = $('#c3', p); if (b3) b3.onclick = async () => { if (await pick(true)) { closeSheet(); await cloudPush(true); cloudSheet(); } };
+    const b6 = $('#c6', p); if (b6) b6.onclick = async () => { if (!(await pick(false))) return; try { const j = await cloudRead(); await cloudApply(j); closeSheet(); render(); toast(`رجعت البيانات ✓ (${new Date(j.saved).toLocaleDateString('ar-EG')})`); } catch (e) { toast(e.message || 'مقدرتش أقرا الملف'); } };
+    const b1 = $('#c1', p); if (b1) b1.onclick = async () => { await cloudPush(true); closeSheet(); cloudSheet(); };
+    const b2 = $('#c2', p); if (b2) b2.onclick = async e => { const btn = e.currentTarget; if (!btn.dataset.sure) { btn.dataset.sure = 1; btn.textContent = 'ده هيستبدل اللي على الموبايل – اضغط تاني'; return; } try { const j = await cloudRead(); await cloudApply(j); closeSheet(); render(); toast('رجعت ✓'); } catch (er) { toast(er.message || 'فشل'); } };
+    const b4 = $('#c4', p); if (b4) b4.onclick = async () => { if (await pick(true)) { closeSheet(); await cloudPush(true); cloudSheet(); } };
+    const b5 = $('#c5', p); if (b5) b5.onclick = async () => { await Zepp.unlinkBackup(); cloudInfo = { linked: false }; closeSheet(); render(); toast('اتفك الربط'); };
+  });
+}
+
 /* ================= إرسال التقرير للكابتن ================= */
 async function sendReport() {
   const txt = weeklyReport();
@@ -1129,6 +1197,7 @@ function foodSwapSheet(id) {
 function renderMenu(el) {
   const rows = [
     ['user', 'ملفي وأهدافي', profileSheet, `${S.settings.kcal} سعر`],
+    ['save', 'المزامنة مع Google Drive', cloudSheet, cloudInfo.linked ? '✓ مربوط' : 'مش مربوط'],
     ['heart', 'الساعة + Health Connect', hcSheet, native ? (S.settings.lastSync ? 'مربوط' : 'مش مربوط') : ''],
     ['scale', 'سجل الأوزان', weightsSheet, ''],
     ['ruler', 'القياسات وتحليل الميزان', bodySheet, ''],
@@ -1215,12 +1284,14 @@ if (S.active && S.active.w) { tab = 'workout'; render(); startPlayer(S.active.w,
 else render();
 if (native && S.settings.lastSync) hcSync(false);
 if (Zepp) zeppPull().then(() => { if ($('#player').hidden) render(); });
+if (Zepp) cloudPullIfNewer().then(() => { if (!cloudInfo.linked && !S.settings.cloudAsked && Object.keys(S.logs).length > 1) { S.settings.cloudAsked = true; save(); setTimeout(() => { if ($('#sheet').hidden && $('#player').hidden) cloudSheet(); }, 1500); } });
 if (LN) (async () => {
   try { if (S.settings.notif && !S.settings.notifAsked) { S.settings.notifAsked = true; save(); await LN.requestPermissions(); } } catch (e) { }
   scheduleReminders();
 })();
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState !== 'visible') return;
+  if (document.visibilityState !== 'visible') { if (cloudT) { clearTimeout(cloudT); cloudPush(); } return; }
+  if (!P) cloudPullIfNewer();
   if (P) { tickPlayer(); keepAwake(true); }
   if (Zepp && !P) zeppPull().then(async () => {
     if ($('#player').hidden) render();
