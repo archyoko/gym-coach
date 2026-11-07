@@ -44,7 +44,10 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          MSG=$(git log -1 --pretty=%s | head -c 200 | sed 's/"/\\"/g')
+          echo "{\"code\": ${{ github.run_number }}, \"notes\": \"$MSG\"}" > version.json
+          cat version.json
           gh release delete latest --yes --cleanup-tag || true
-          gh release create latest gym-coach.apk \
+          gh release create latest gym-coach.apk version.json \
             --title "كوتش الجيم – آخر نسخة (رقم ${{ github.run_number }})" \
             --notes "نزّل gym-coach.apk وسطّبه على موبايلك. النسخة الجديدة بتتسطّب فوق القديمة وبياناتك بتفضل زي ما هي."

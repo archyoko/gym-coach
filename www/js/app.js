@@ -537,6 +537,36 @@ function zeppSetupSheet() {
 /* ================= الإشعارات ================= */
 let WD = null;
 try { if (native) WD = Cap.registerPlugin ? Cap.registerPlugin('WatchDirect') : Cap.Plugins.WatchDirect; } catch (e) { WD = null; }
+/* ================= التحديث من جوه التطبيق ================= */
+let UP = null;
+try { if (native) UP = Cap.registerPlugin ? Cap.registerPlugin('Updater') : Cap.Plugins.Updater; } catch (e) { UP = null; }
+let upInfo = null;
+async function upCheck(show) {
+  if (!UP) { if (show) toast('ده شغال في تطبيق الأندرويد بس'); return; }
+  try { upInfo = await UP.check(); } catch (e) { if (show) toast(String(e.message || e)); return; }
+  S.settings.upChecked = Date.now(); save();
+  if (show || (upInfo.available && S.settings.upSeen !== upInfo.latest && $('#sheet').hidden && $('#player').hidden)) { S.settings.upSeen = upInfo.latest; save(); updateSheet(); }
+}
+function updateSheet() {
+  const u = upInfo || {};
+  openSheet(sheetHead('تحديث التطبيق', u.current ? `نسختك رقم ${u.current}` : '') + (u.available ? `
+    <div class="verdict ok"><h3>فيه نسخة جديدة 🎉</h3><p>رقم ${u.latest} – بياناتك هتفضل زي ما هي.</p></div>
+    <div class="note mt"><span class="i">1</span><span>اضغط <b>حدّث دلوقتي</b> واستنى التحميل.</span></div>
+    <div class="note"><span class="i">2</span><span>هتطلعلك شاشة التسطيب ← اضغط <b>تحديث</b>. (أول مرة بس هيطلب إذن "التثبيت من المصدر ده" ← وافق وارجع.)</span></div>
+    <div class="note"><span class="i">3</span><span>لو Play Protect اعترض ← اضغط <b>تفاصيل أكتر</b> ← <b>ثبّت على أي حال</b>.</span></div>
+    <button class="btn red block mt" id="upGo">حدّث دلوقتي</button>` : `
+    <div class="verdict ok"><h3>إنت على آخر نسخة ✅</h3><p>التطبيق بيشوف لوحده كل ما تفتحه، ولو فيه جديد هيقولك.</p></div>
+    <button class="btn ghost block mt" id="upAgain">شوف تاني</button>`), p => {
+    const a = $('#upAgain', p); if (a) a.onclick = () => { closeSheet(); upCheck(true); };
+    const g = $('#upGo', p); if (g) g.onclick = async () => {
+      try { const c = await UP.canInstall(); if (!c.ok) { toast('وافق على "السماح من المصدر ده" وارجع اضغط تاني'); await UP.allowInstall(); return; } } catch (e) { }
+      g.disabled = true; g.textContent = 'بينزّل…';
+      let h = null; try { h = await UP.addListener('progress', e => { if (e.pct >= 0) g.textContent = `بينزّل… ${e.pct}%`; }); } catch (e) { }
+      try { await UP.install(); g.textContent = 'كمّل في شاشة التسطيب'; } catch (e) { toast(String(e.message || e)); g.disabled = false; g.textContent = 'حدّث دلوقتي'; }
+      try { h && h.remove(); } catch (e) { }
+    };
+  });
+}
 /* ================= الساعة مباشرة (من غير Zepp Active) ================= */
 const tISO = t => iso(new Date(t * 1000));
 const tHM = t => { const x = new Date(t * 1000); return `${pad2(x.getHours())}:${pad2(x.getMinutes())}`; };
@@ -2070,6 +2100,7 @@ function renderMenu(el) {
     
     ['heart', 'مكان الجيم', gymSheet, S.settings.gym ? '✓' : ''],
     ['shield', 'قواعد الكابتن والمصادر', rulesSheet, ''],
+    ['save', 'تحديث التطبيق', () => upCheck(true), upInfo && upInfo.available ? '🔴 فيه جديد' : ''],
     ['report', 'أدوات تانية', moreSheet, '']
   ];
   el.innerHTML = `${topbar('المزيد')}
@@ -2157,6 +2188,7 @@ if (Zepp) cloudPullIfNewer().then(() => { if (!cloudInfo.linked && !S.settings.c
 if (LN) setupNotifActions();
 if (ghOn()) setTimeout(() => ghSync(), 2500);
 setTimeout(gymCheck, 3000);
+if (UP) setTimeout(() => upCheck(false), 4000);
 if (WD) setTimeout(() => watchSync(false).then(ok => { if (ok && $('#player').hidden && $('#sheet').hidden) render(); }), 1500);
 if (LN) (async () => {
   try { if (S.settings.notif && !S.settings.notifAsked) { S.settings.notifAsked = true; save(); await LN.requestPermissions(); } } catch (e) { }
@@ -2167,6 +2199,7 @@ document.addEventListener('visibilitychange', () => {
   if (!P) cloudPullIfNewer();
   if (!P && ghOn() && Date.now() - (S.settings.ghLast || 0) > 30 * 60e3) ghSync();
   if (!P) setTimeout(gymCheck, 800);
+  if (UP && !P && Date.now() - (S.settings.upChecked || 0) > 3 * 3600e3) setTimeout(() => upCheck(false), 2000);
   if (WD && !P) setTimeout(() => watchSync(false).then(ok => { if (ok && $('#player').hidden && $('#sheet').hidden) render(); }), 1200);
   if (P) { tickPlayer(); keepAwake(true); }
   if (Zepp && !P) zeppPull().then(async () => {
