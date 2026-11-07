@@ -148,6 +148,8 @@ public class Updater extends Plugin {
                 c.setRequestProperty("Authorization", "Bearer ");
                 String tok = call.getString("token", "");
                 if (!tok.isEmpty()) c.setRequestProperty("x-token", tok);
+                // هيدرز إضافية من المستودع الخاص (بتغطي على اللي فوق)
+                try { JSONObject ex = new JSONObject(call.getString("extra", "{}")); java.util.Iterator<String> it = ex.keys(); while (it.hasNext()) { String k = it.next(); c.setRequestProperty(k, ex.optString(k)); } } catch (Exception ignored) { }
                 c.getOutputStream().write(body.getBytes("UTF-8"));
                 int code = c.getResponseCode();
                 InputStream in = code >= 400 ? c.getErrorStream() : c.getInputStream();

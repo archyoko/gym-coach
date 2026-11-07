@@ -732,16 +732,17 @@ async function fwProbe(btn) {
     const cfg = JSON.parse(decodeURIComponent(escape(atob(cf.content.replace(/\n/g, '')))));
     const mac = (S.watch && S.watch.mac) || hw.mac;
     // السيرفر بيدّي الملف بس لو فيه نسخة أحدث، فبنسأل كأن الساعة على نسخة قديمة عشان يدّينا آخر ملف
-    const bodies = [{ adapterNum: hw.adapter, otaVersion: hw.fw, uiVersion: hw.ui, netVersion: hw.fw }, { adapterNum: hw.adapter, otaVersion: 'V0.01', uiVersion: hw.adapter + '-00', netVersion: 'V0.01' }];
+    const fill = o => JSON.parse(JSON.stringify(o).replace(/\{adapter\}/g, hw.adapter).replace(/\{fw\}/g, hw.fw).replace(/\{ui\}/g, hw.ui));
+    // الطلبات نفسها جاية من المستودع الخاص، عشان أقدر أغيّرها من غير تحديث للتطبيق
+    const bodies = (cfg.bodies || [{ adapterNum: '{adapter}', otaVersion: '{fw}', uiVersion: '{ui}', netVersion: '{fw}' }, { adapterNum: '{adapter}', otaVersion: 'V0.01', uiVersion: '{adapter}-00', netVersion: 'V0.01' }]).map(fill);
     let res = null;
     for (const bd of bodies) { if (res) break; const body = JSON.stringify(bd);
-    for (const host of cfg.hosts) {
+    for (const host of cfg.hosts) { if (res) break;
       say('بيسأل سيرفر الساعة…');
       try {
-        const x = await UP.watchApi({ url: host + cfg.path, body, token: cfg.token || '', client: cfg.client, salt: cfg.salt, name: (S.watch && S.watch.name) || hw.name, num: hw.adapter, mac, ver: hw.fw });
+        const x = await UP.watchApi({ url: host + (cfg.path || '/api/v2/ota/fission'), body, token: cfg.token || '', client: cfg.client, salt: cfg.salt, name: (S.watch && S.watch.name) || hw.name, num: hw.adapter, mac, ver: bd.otaVersion || hw.fw, extra: JSON.stringify(cfg.headers || {}) });
         out.steps.push({ host, code: x.code, text: (x.text || '').slice(0, 3000) });
         if (x.code === 200 && /upgradeList/.test(x.text || '')) { res = x; break; }
-        if (x.code === 200 && /"code":200/.test(x.text || '')) break;
       } catch (e) { out.steps.push({ host, err: String(e.message || e) }); }
     } }
     if (res) {
