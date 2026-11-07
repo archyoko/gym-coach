@@ -145,6 +145,9 @@ public class Updater extends Plugin {
                 c.setRequestProperty("Device-Model", num);
                 c.setRequestProperty("Client-Id", client);
                 c.setRequestProperty("Sign", sign);
+                c.setRequestProperty("Authorization", "Bearer ");
+                String tok = call.getString("token", "");
+                if (!tok.isEmpty()) c.setRequestProperty("x-token", tok);
                 c.getOutputStream().write(body.getBytes("UTF-8"));
                 int code = c.getResponseCode();
                 InputStream in = code >= 400 ? c.getErrorStream() : c.getInputStream();

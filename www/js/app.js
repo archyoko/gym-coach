@@ -736,9 +736,9 @@ async function fwProbe(btn) {
     for (const host of cfg.hosts) {
       say('بيسأل سيرفر الساعة…');
       try {
-        const x = await UP.watchApi({ url: host + cfg.path, body, client: cfg.client, salt: cfg.salt, name: (S.watch && S.watch.name) || hw.name, num: hw.adapter, mac, ver: hw.fw });
+        const x = await UP.watchApi({ url: host + cfg.path, body, token: cfg.token || '', client: cfg.client, salt: cfg.salt, name: (S.watch && S.watch.name) || hw.name, num: hw.adapter, mac, ver: hw.fw });
         out.steps.push({ host, code: x.code, text: (x.text || '').slice(0, 3000) });
-        if (x.code === 200) { res = x; break; }
+        if (x.code === 200 && !/"code":2\d{4}/.test(x.text || '')) { res = x; break; }
       } catch (e) { out.steps.push({ host, err: String(e.message || e) }); }
     }
     if (res) {
