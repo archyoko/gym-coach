@@ -9,6 +9,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(ZeppBridge.class);
         registerPlugin(WatchDirect.class);
         registerPlugin(Updater.class);
+        registerPlugin(ScaleLink.class);
         super.onCreate(savedInstanceState);
         // حجم الخط الكبير في إعدادات الموبايل كان بيكبّر الكلام ويخليه يركب على بعض
         try { getBridge().getWebView().getSettings().setTextZoom(100); } catch (Exception ignored) { }

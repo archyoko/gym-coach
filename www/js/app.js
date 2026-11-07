@@ -615,8 +615,80 @@ async function zeppFetch() {
   if (!zeppState.enabled) { zeppSetupSheet(); return; }
   try { await Zepp.fetchNow(); } catch (e) { toast(e.message || 'مقدرتش أفتح Zepp Active'); }
 }
-function zeppSetupSheet() {
-  openSheet(sheetHead('الميزان (OKOK)', 'عشان يقرا وزنك وتحليل جسمك') + `
+/* ================= الميزان مباشرة (OKOK BLE) ================= */
+let SD = null;
+try { if (native) SD = Cap.registerPlugin ? Cap.registerPlugin('ScaleDirect') : Cap.Plugins.ScaleDirect; } catch (e) { SD = null; }
+const clampN = (x, a, b) => Math.min(b, Math.max(a, x));
+/* تحليل الجسم من الوزن والمقاومة + بيانات محمد (الطريقة من openScale لنفس الميزان) */
+function okokComp(w, imp) {
+  const S2 = S.settings, h = S2.height, a = S2.age, male = 1; // محمد
+  const bmi = r1(w / ((h / 100) ** 2));
+  if (!imp || imp <= 0) return { weight: r1(w), bmi, src: 'scale' };
+  const fatMass = h * -0.3315 + w * 0.6216 + a * 0.0183 + imp * 0.0085 + 22.554;
+  const fat = clampN(fatMass / w * 100, 5, 45);
+  const lean = w - fatMass;
+  const smm = clampN(h * 0.2573 + w * 0.1745 - a * 0.0161 + male * 2.4269 - imp * 0.017 - 20.2165, 20, 70);
+  const skm = smm * 100 / w;
+  let muscleMass;
+  if (fat > 45) muscleMass = (w - w * 0.05) - 4;
+  else if (fat < 5) muscleMass = (w - w * 0.05) - 1;
+  else muscleMass = clampN(h * 0.2867 + w * 0.3894 - a * 0.0408 - imp * 0.01235 - 15.7665, 20, 70);
+  const waterPc = clampN((h * 0.0939 + w * 0.3758 - a * 0.0032 - imp * 0.006925 + 0.097) / w * 100, 20, 85);
+  const waterKg = waterPc / 100 * w;
+  const visceral = clampN(h * -0.2675 + w * 0.42 + a * 0.1462 + imp * 0.0123 + 13.9871, 1, 60);
+  const bone = clampN(w - fatMass - muscleMass, 1, 4);
+  const bmr = Math.round(10 * w + 6.25 * h - 5 * a + 5); // Mifflin – زي حسبة التطبيق وأقرب لـ OKOK
+  const protein = (muscleMass - waterKg) / w * 100;
+  const metaAge = Math.round(clampN(h * -0.7471 + w * 0.9161 + a * 0.4184 + imp * 0.0517 + 54.2267, 18, 80));
+  return {
+    weight: r1(w), bmi, fat: r1(fat), fatKg: r1(fat / 100 * w), skm: r1(skm), skmKg: r1(skm / 100 * w),
+    muscle: r1(muscleMass / w * 100), muscleKg: r1(muscleMass), water: r1(waterPc), waterKg: r1(waterKg),
+    visceral: r1(visceral), bone: r1(bone), bmr, protein: r1(protein), lean: r1(lean), metaAge, imp: r1(imp), src: 'scale'
+  };
+}
+function latestBody() { const ds = Object.keys(S.body).sort(); for (let i = ds.length - 1; i >= 0; i--) if (S.body[ds[i]] && S.body[ds[i]].weight) return { d: ds[i], b: S.body[ds[i]] }; return null; }
+async function scaleWeigh(onDone) {
+  if (!SD) { toast('ده شغال في تطبيق الأندرويد بس'); return; }
+  try {
+    const r = await SD.weigh({ timeout: 60000 });
+    const d = today(), comp = okokComp(r.weight, r.impedance);
+    S.body[d] = Object.assign({}, S.body[d] || {}, comp);
+    (S.health[d] = S.health[d] || {}).oweight = r.weight;
+    S.settings.scaleVariant = r.variant; save();
+    onDone && onDone(comp, r);
+    return comp;
+  } catch (e) { toast(String(e.message || e)); return null; }
+}
+const BODY_ROWS = [['fat', 'نسبة الدهون', '%'], ['fatKg', 'كتلة الدهون', 'كجم'], ['skmKg', 'العضل الهيكلي', 'كجم'], ['muscleKg', 'كتلة العضل', 'كجم'], ['water', 'المية', '%'], ['visceral', 'الدهون الحشوية', ''], ['bone', 'العظم', 'كجم'], ['bmr', 'الأيض الأساسي (BMR)', 'سعر'], ['protein', 'البروتين', '%'], ['metaAge', 'العمر الأيضي', 'سنة'], ['bmi', 'مؤشر الكتلة (BMI)', '']];
+function bodyTable(b) {
+  return BODY_ROWS.filter(r => b[r[0]] != null).map(r => `<div class="hrow"><span class="v">${r[1]}</span><span class="d num"><b>${b[r[0]]}</b>${r[2] ? ' ' + r[2] : ''}</span></div>`).join('');
+}
+function scaleSheet() {
+  const lb = latestBody();
+  openSheet(sheetHead('الميزان', 'قف على الميزان والتطبيق يقراه مباشرة') + `
+    <p class="muted small" style="line-height:1.8">التطبيق بيقرا وزنك وتحليل جسمك من الميزان مباشرة — مش محتاج تطبيق OKOK خالص.</p>
+    <button class="btn red block mt" id="sWeigh">⚖️ اتوزن دلوقتي</button>
+    <div id="sRes"></div>
+    ${lb ? `<div class="section-t">آخر قياس · ${short(lb.d)}${lb.b.src === 'scale' ? ' (مباشر)' : lb.b.src === 'okok' ? ' (OKOK)' : ''}</div>
+      <div class="hrow"><span class="v">الوزن</span><span class="d num"><b>${lb.b.weight ?? '—'}</b> كجم</span></div>${bodyTable(lb.b)}` : '<p class="muted small mt">لسه مفيش قياس. قف على الميزان واضغط الزرار.</p>'}
+    <div class="section-t">لو الربط المباشر مش لاقي الميزان</div>
+    <button class="btn ghost block sm" id="sOkok">استخدم تطبيق OKOK (الطريقة القديمة)</button>
+    <p class="muted small mt" style="line-height:1.8">⚠️ أول مرة: اتوزن بالتطبيق وبعدين افتح OKOK وقارن الأرقام. لو قريبة من بعض، تقدر تلغي OKOK خالص. لو بعيدة، قولّي وأظبّط الحساب.</p>`, p => {
+    $('#sWeigh', p).onclick = async () => {
+      const b = $('#sWeigh', p); b.disabled = true; b.textContent = 'قف على الميزان… (بيدوّر 60 ثانية)';
+      const comp = await scaleWeigh();
+      b.disabled = false; b.textContent = '⚖️ اتوزن دلوقتي';
+      if (comp) {
+        $('#sRes', p).innerHTML = `<div class="verdict ok"><h3>وزنك ${comp.weight} كجم ✅</h3><p>${comp.fat != null ? `دهون ${comp.fat}% · عضل هيكلي ${comp.skmKg} كجم · مية ${comp.water}%` : 'الميزان ده بيبعت الوزن بس من غير تحليل جسم'}</p></div>`;
+        toast('اتسجّل ✓'); render();
+      }
+    };
+    $('#sOkok', p).onclick = () => { closeSheet(); okokSetupSheet(); };
+  });
+}
+
+function okokSetupSheet() {
+  openSheet(sheetHead('قراءة الميزان من OKOK', 'الطريقة القديمة – لو الربط المباشر مش لاقي الميزان') + `
     <p style="line-height:1.8">الساعة بقت مربوطة بالتطبيق <b>مباشرة</b>، فمش محتاج Zepp Active خالص — تقدر تلغي تثبيته. الحاجة الوحيدة اللي بتتقرا من بره هي <b>وزنك وتحليل جسمك من ميزان OKOK</b> وانت بتتوزن.</p>
     <div class="note"><span class="i">1</span><span>اضغط ← معلومات التطبيق ← <b>⋮</b> فوق ← <b>السماح بالإعدادات المقيدة</b>. لو مش ظاهرة كمّل خطوة 2.</span></div>
     <button class="btn ghost block mt sm" id="z1">افتح معلومات التطبيق</button>
@@ -2568,7 +2640,7 @@ function renderMenu(el) {
   const rows = [
     ['user', 'ملفي وأهدافي', profileSheet, `${S.settings.kcal} سعر`],
     ['heart', 'الساعة', () => watchDirectSheet(), (S.watch || {}).battery != null ? `🔋 ${S.watch.battery}%` : ''],
-    ['heart', 'الميزان (OKOK)', zeppSetupSheet, native ? (zeppState.okokRead ? '✓' : 'مش مربوط') : ''],
+    ['heart', 'الميزان', scaleSheet, native ? ((latestBody() && latestBody().b.src === 'scale') ? '✓ مباشر' : zeppState.okokRead ? '✓' : 'مش مربوط') : ''],
     ['save', 'المزامنة مع Google Drive', cloudSheet, cloudInfo.linked ? '✓ مربوط' : 'مش مربوط'],
     ['bell', 'الإشعارات', notifSheet, S.settings.notif ? 'شغالة' : 'مقفولة'],
     ['shield', 'الكابتن (المراجعة اليومية)', () => (ghOn() && (S.coach.msgs || []).length ? coachMsgsSheet() : ghSheet()), ghOn() ? (S.settings.ghLast ? '✓ شغالة' : 'مستنية') : 'مش متفعّلة'],
