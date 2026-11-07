@@ -188,7 +188,8 @@ public class WatchLink {
 
     private void scheduleReconnect() {
         if (!keepAlive) return;
-        long d = Math.min(300000, 10000L * (1L << Math.min(retry, 5)));
+        // الساعة بتقطع الاتصال كل دقيقة تقريباً – نرجع على طول عشان المكالمات متفوتش
+        long d = retry < 5 ? 1500 : Math.min(300000, 10000L * (1L << Math.min(retry - 5, 5)));
         retry++;
         L("reconnect in " + d / 1000 + "s");
         h.postDelayed(this::ensure, d);
@@ -311,7 +312,7 @@ public class WatchLink {
                 L("state " + state + " status " + status);
                 if (g != gatt) { try { g.close(); } catch (Exception ignored) { } return; }
                 if (state == BluetoothProfile.STATE_CONNECTED) g.requestMtu(247);
-                else if (state == BluetoothProfile.STATE_DISCONNECTED) { drop(); failAll("الساعة فصلت"); scheduleReconnect(); }
+                else if (state == BluetoothProfile.STATE_DISCONNECTED) { drop(); if (cur == null && q.isEmpty()) { scheduleReconnect(); } else { failAll("الساعة فصلت"); scheduleReconnect(); } }
             });
         }
         @SuppressLint("MissingPermission")

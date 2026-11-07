@@ -100,8 +100,8 @@ public class WatchNotifService extends NotificationListenerService {
                 if (!c.optBoolean("calls", true)) return;
                 if (sbn.getKey().equals(callKey)) return;
                 if (System.currentTimeMillis() - CallReceiver.lastRing < 20000) { callKey = sbn.getKey(); return; } // وصلت من حالة التليفون خلاص
-                // نتأكد إنها بترن (مش مكالمة شغالة): اللي بترن ليها fullScreenIntent أو أزرار رد/رفض
-                if (n.fullScreenIntent == null && (n.actions == null || n.actions.length < 2)) return;
+                // لو إذن حالة التليفون موجود، CallReceiver هو اللي بيبعت المكالمة
+                if (checkSelfPermission(Manifest.permission.READ_PHONE_STATE) == PackageManager.PERMISSION_GRANTED) { callKey = sbn.getKey(); return; }
                 callKey = sbn.getKey();
                 String digits = title.replaceAll("[^0-9+]", "");
                 WatchLink.get(this).incomingCall(title, digits.length() >= 5 ? digits : "", null);
