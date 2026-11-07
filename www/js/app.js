@@ -619,16 +619,39 @@ function stagesBar(st) {
     <div class="muted small" style="display:flex;gap:10px;flex-wrap:wrap"><span style="color:#5b2fa0">■ عميق</span><span style="color:#a98be0">■ خفيف</span><span style="color:#3d9bff">■ أحلام</span><span style="color:#ffb020">■ صاحي</span></div>`;
 }
 const WD_SOON = [
-  ['🔔', 'إشعارات الموبايل على الساعة', 'واتساب والرسايل وأي تطبيق تختاره'],
-  ['📞', 'المكالمات باسم المتصل', 'الساعة تقرا الاسم من الأسماء اللي عندك'],
   ['⭐', 'الأرقام المفضلة على الساعة', 'تختار أسماء تتحط في الساعة'],
   ['⚙️', 'إعدادات الساعة', 'منبّه، تذكير الحركة والمية، عدم الإزعاج، رفع الإيد'],
   ['⌚', 'شكل الساعة', 'تغيّر بين الأشكال اللي جوه الساعة، وبعدين صورة من عندك'],
   ['🌤️', 'الطقس والمزيكا والكاميرا', '']
 ];
-function watchDirectSheet() {
+const FWD_APPS = [['com.whatsapp', 'واتساب'], ['com.facebook.orca', 'ماسنجر'], ['com.facebook.katana', 'فيسبوك'], ['com.instagram.android', 'انستجرام'], ['com.google.android.gm', 'Gmail'], ['org.telegram.messenger', 'تيليجرام'], ['com.google.android.apps.messaging', 'الرسايل (SMS)'], ['com.microsoft.office.outlook', 'Outlook'], ['com.linkedin.android', 'LinkedIn']];
+const fwdDefault = () => ({ on: true, calls: true, self: true, known: true, others: false, apps: {} });
+async function watchDirectSheet() {
+  let st = null;
+  if (WD) { try { st = await WD.status(); } catch (e) { st = null; } }
+  watchPage(st);
+}
+function fwdBlock(st) {
+  if (!st) return '';
+  let c = {}; try { c = JSON.parse(st.fwd || '{}'); } catch (e) { }
+  if (c.on == null) c = fwdDefault();
+  const tg = (k, label, on, sub) => `<button class="hrow" data-fw="${k}" style="width:100%;border:0;background:none;text-align:inherit"><span class="v">${label}${sub ? `<small>${sub}</small>` : ''}</span><span class="d"><b class="${on ? 'up' : 'muted'}">${on ? '✓ شغال' : 'مقفول'}</b></span></button>`;
+  const appOn = pk => c.apps && pk in c.apps ? !!c.apps[pk] : c.known !== false;
+  return `<div class="section-t">الإشعارات والمكالمات على الساعة</div>
+    ${!st.notifAccess ? `<div class="note"><span class="i">1</span><span>اضغط الزرار ← هتفتح صفحة ← شغّل <b>Lifestyle</b> ← وافق. (لو قالك "إعدادات مقيدة" اعمل نفس خطوة الساعة القديمة: معلومات التطبيق ← ⋮ ← السماح بالإعدادات المقيدة)</span></div>
+      <button class="btn red block mt sm" id="fwAcc">اسمح لـ Lifestyle يقرا الإشعارات</button>` : `
+    ${tg('on', 'توصيل الإشعارات للساعة', c.on)}
+    ${c.on ? `${tg('calls', '📞 المكالمات', c.calls !== false, 'اسم المتصل يظهر والساعة تهزّ')}
+      ${tg('self', '💪 تذكيرات Lifestyle', c.self !== false, 'الراحة بين السِتات، الكرياتين، المية، النوم، رسالة الكابتن')}
+      ${FWD_APPS.map(([pk, n]) => tg('app:' + pk, n, appOn(pk))).join('')}
+      ${tg('others', 'أي تطبيق تاني', !!c.others)}
+      ${c.calls !== false && !st.callPerm ? `<button class="btn ghost block sm mt" id="fwCall">اسمح بقفل المكالمة من الساعة</button>` : ''}
+      <button class="btn ghost block sm mt" id="fwTest">ابعت رسالة تجربة للساعة</button>
+      <p class="muted small mt" style="line-height:1.8">⚠️ عشان الرسايل متوصلش مرتين: افتح Zepp Active ← الإشعارات ← اقفلها هناك.</p>` : ''}`}`;
+}
+function watchPage(st) {
   const W = S.watch || {}, t = W.today || {}, d0 = today(), h = S.health[d0] || {};
-  const lastNight = S.health[d0] && S.health[d0].zsq, st = (W.stages || {})[d0];
+  const lastNight = S.health[d0] && S.health[d0].zsq, stg = (W.stages || {})[d0];
   const ago = W.at ? Math.round((Date.now() - W.at) / 6e4) : null;
   openSheet(sheetHead('الساعة', W.name ? esc(W.name) : 'Amazfit Pop 3R') + `
     <div class="card pad" style="display:flex;align-items:center;gap:14px">
@@ -643,10 +666,11 @@ function watchDirectSheet() {
     ${t.hr ? `<div class="hrow"><span class="v">النبض دلوقتي</span><span class="d num">${t.hr} ❤️</span></div>` : ''}
     ${lastNight ? `<div class="section-t">نوم امبارح</div>
       <div class="hrow"><span class="v">من ${esc(lastNight.bed || '—')} لـ ${esc(lastNight.wake || '—')}</span><span class="d num">${h.zsleep ? `${Math.floor(h.zsleep / 60)}:${pad2(h.zsleep % 60)} ساعة` : ''}</span></div>
-      ${stagesBar(st)}
-      <div class="hrow"><span class="v">عميق · خفيف · أحلام · صاحي</span><span class="d num">${lastNight.deep ?? '—'} · ${lastNight.light ?? '—'} · ${lastNight.rem ?? '—'} · ${lastNight.awake ?? '—'} د</span></div>` : ''}
+      ${stagesBar(stg)}
+      <p class="small" style="margin:6px 0 0;line-height:1.9">عميق <b>${lastNight.deep ?? '—'}</b> د · خفيف <b>${lastNight.light ?? '—'}</b> د · أحلام <b>${lastNight.rem ?? '—'}</b> د · صاحي <b>${lastNight.awake ?? '—'}</b> د</p>` : ''}
     ${hrSvg(W.hr) ? `<div class="section-t">النبض آخر 24 ساعة</div><div class="card pad">${hrSvg(W.hr)}</div>` : ''}
     ${(W.workouts || []).length ? `<div class="section-t">تمارين سجّلتها الساعة</div>${W.workouts.slice(-5).reverse().map(w => `<div class="hrow"><span class="v">${new Date(w.begin * 1000).toLocaleDateString('ar-EG', { weekday: 'short', day: 'numeric', month: 'short' })} · ${Math.round((w.sec || 0) / 60)} د</span><span class="d num">${w.kcal || 0} سعر · نبض ${w.avgHR || '—'}</span></div>`).join('')}` : ''}
+    ${fwdBlock(st)}
     <div class="section-t">جاي في التحديثات الجاية</div>
     ${WD_SOON.map(x => `<div class="hrow"><span class="v">${x[0]} ${x[1]}${x[2] ? `<small>${x[2]}</small>` : ''}</span><span class="d muted small">قريب</span></div>`).join('')}
     <p class="muted small mt" style="line-height:1.8">التطبيق بيقرا من الساعة لوحده كل ما تفتحه (كل 45 دقيقة بالكتير). Zepp Active يفضل متسطّب دلوقتي لحد ما نخلّص الإشعارات والمكالمات.</p>
@@ -661,7 +685,19 @@ function watchDirectSheet() {
       if (!WD) { toast('ده شغال في تطبيق الأندرويد بس'); return; }
       try { await WD.find({ log: false }); toast('الساعة بتهزّ دلوقتي 📳'); } catch (e) { toast(String(e.message || e)); }
     };
-    $('#wdLog', p).onclick = () => copyText(`ERR: ${S.settings.wdLastErr || ''}\n${S.settings.wdLastLog || ''}`);
+    $('#wdLog', p).onclick = async () => { let l = ''; try { l = (await WD.getLog()).log; } catch (e) { } copyText(`ERR: ${S.settings.wdLastErr || ''}\n${S.settings.wdLastLog || ''}\n--- link ---\n${l}`); };
+    const acc = $('#fwAcc', p); if (acc) acc.onclick = () => WD.openNotifAccess();
+    const cl = $('#fwCall', p); if (cl) cl.onclick = async () => { try { await WD.askCallPerm(); } catch (e) { } closeSheet(); watchDirectSheet(); };
+    const te = $('#fwTest', p); if (te) te.onclick = async () => { te.disabled = true; te.textContent = 'بيبعت…'; try { await WD.message({ title: 'الكابتن', text: 'أهلاً يا محمد 💪 الساعة بقت مربوطة بـ Lifestyle' }); toast('اتبعتت – بص على الساعة'); } catch (e) { toast(String(e.message || e)); } te.disabled = false; te.textContent = 'ابعت رسالة تجربة للساعة'; };
+    p.querySelectorAll('[data-fw]').forEach(b => b.onclick = async () => {
+      let c = {}; try { c = JSON.parse(st.fwd || '{}'); } catch (e) { }
+      if (c.on == null) c = fwdDefault();
+      const k = b.dataset.fw;
+      if (k.startsWith('app:')) { const pk = k.slice(4); c.apps = c.apps || {}; const cur = pk in c.apps ? !!c.apps[pk] : c.known !== false; c.apps[pk] = !cur; }
+      else c[k] = !(k === 'others' ? !!c[k] : c[k] !== false);
+      try { await WD.setForward({ cfg: c }); } catch (e) { }
+      closeSheet(); watchDirectSheet();
+    });
   });
 }
 let LN = null;
