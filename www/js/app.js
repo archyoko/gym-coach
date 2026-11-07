@@ -675,7 +675,7 @@ function fwdBlock(st) {
       ${tg('self', '💪 تذكيرات Lifestyle', c.self !== false, 'الراحة بين السِتات، الكرياتين، المية، النوم، رسالة الكابتن')}
       ${FWD_APPS.map(([pk, n]) => tg('app:' + pk, n, appOn(pk))).join('')}
       ${tg('others', 'أي تطبيق تاني', !!c.others)}
-      ${c.calls !== false && !st.callPerm ? `<button class="btn ghost block sm mt" id="fwCall">اسمح بقفل المكالمة من الساعة</button>` : ''}
+      ${c.calls !== false && !st.callPerm ? `<div class="note mt"><span class="i">📞</span><span>عشان المكالمات تظهر باسم المتصل: اضغط الزرار ← وافق على كل الأذونات (المكالمات، سجل المكالمات، جهات الاتصال).</span></div><button class="btn red block sm mt" id="fwCall">اسمح بالمكالمات</button>` : ''}
       <button class="btn ghost block sm mt" id="fwTest">ابعت رسالة تجربة للساعة</button>
       <p class="muted small mt" style="line-height:1.8">⚠️ عشان الرسايل متوصلش مرتين: افتح Zepp Active ← الإشعارات ← اقفلها هناك.</p>` : ''}`}`;
 }

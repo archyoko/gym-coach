@@ -28,7 +28,7 @@ import java.util.Calendar;
  */
 @CapacitorPlugin(name = "WatchDirect", permissions = {
         @Permission(alias = "bt", strings = {Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.BLUETOOTH_SCAN}),
-        @Permission(alias = "call", strings = {Manifest.permission.ANSWER_PHONE_CALLS})
+        @Permission(alias = "call", strings = {Manifest.permission.READ_PHONE_STATE, Manifest.permission.READ_CALL_LOG, Manifest.permission.READ_CONTACTS, Manifest.permission.ANSWER_PHONE_CALLS})
 })
 public class WatchDirect extends Plugin {
 

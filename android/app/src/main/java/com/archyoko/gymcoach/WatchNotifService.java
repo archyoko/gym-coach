@@ -99,6 +99,7 @@ public class WatchNotifService extends NotificationListenerService {
             if (Notification.CATEGORY_CALL.equals(n.category) && isDialer(pkg)) {
                 if (!c.optBoolean("calls", true)) return;
                 if (sbn.getKey().equals(callKey)) return;
+                if (System.currentTimeMillis() - CallReceiver.lastRing < 20000) { callKey = sbn.getKey(); return; } // وصلت من حالة التليفون خلاص
                 // نتأكد إنها بترن (مش مكالمة شغالة): اللي بترن ليها fullScreenIntent أو أزرار رد/رفض
                 if (n.fullScreenIntent == null && (n.actions == null || n.actions.length < 2)) return;
                 callKey = sbn.getKey();
