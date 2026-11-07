@@ -649,8 +649,7 @@ function stagesBar(st) {
     <div class="muted small" style="display:flex;gap:10px;flex-wrap:wrap"><span style="color:#5b2fa0">■ عميق</span><span style="color:#a98be0">■ خفيف</span><span style="color:#3d9bff">■ أحلام</span><span style="color:#ffb020">■ صاحي</span></div>`;
 }
 const WD_SOON = [
-  ['⌚', 'شكل الساعة', 'صورة من عندك كخلفية للساعة'],
-  ['⏰', 'المنبّه', 'تظبطه من التطبيق'],
+    ['⏰', 'المنبّه', 'تظبطه من التطبيق'],
   ['⭐', 'الأرقام المفضلة', 'أسماء تتحط في الساعة'],
   ['🌤️', 'الطقس والمزيكا', '']
 ];
@@ -768,10 +767,86 @@ function notifTab(st) {
       <button class="btn ghost block sm mt" id="fwTest">ابعت رسالة تجربة للساعة</button>
       <p class="muted small mt" style="line-height:1.8">⚠️ عشان الرسايل متوصلش مرتين: اقفل الإشعارات من Zepp Active.</p>` : ''}`;
 }
+/* ---------- شكل الساعة (ثيمات) ---------- */
+let wHw = null, wHwErr = '', faceSel = null;
+const FACES = [
+  { id: 'life', name: 'Lifestyle', bg: ['#ff6a2b', '#e8531a'], ink: '#ffffff', mark: 'pulse' },
+  { id: 'night', name: 'أسود بسيط', bg: ['#0d0d10', '#1b1b22'], ink: '#ff6a2b', mark: 'none' },
+  { id: 'navy', name: 'كحلي', bg: ['#0f1c3a', '#24407a'], ink: '#ffffff', mark: 'ring' },
+  { id: 'gym', name: 'جيم', bg: ['#111111', '#2a2a2a'], ink: '#ffc83d', mark: 'bar' },
+  { id: 'mint', name: 'أخضر هادي', bg: ['#0e3b2e', '#1f7a5c'], ink: '#eafff6', mark: 'ring' },
+  { id: 'photo', name: 'صورة من عندك', bg: ['#333', '#555'], ink: '#ffffff', mark: 'none', photo: true }
+];
+const FACE_INKS = ['#ffffff', '#ff6a2b', '#ffc83d', '#3d9bff', '#2fb36d', '#000000'];
+function parseHw(h) {
+  const b = hx2b(h); if (b.length < 116) return null;
+  const str = (o, n) => String.fromCharCode(...b.slice(o, o + n)).replace(/\0.*$/s, '').trim();
+  return { ver: b[0], chip: b[1], w: rd(b, 108, 2), h: rd(b, 110, 2), tw: rd(b, 112, 2), th: rd(b, 114, 2), name: str(48, 24), fw: str(32, 8), compressed: b.length > 134 ? !!(b[134] & 2) : false, raw: h };
+}
+async function hwLoad() {
+  wHwErr = '';
+  try {
+    const r = await WD.readRaw({ cmds: ['0101'] });
+    const h = r['0101'];
+    if (!h || h.startsWith('ERR')) throw new Error(h || 'مفيش رد');
+    wHw = parseHw(h); if (!wHw) throw new Error('رد ناقص');
+    (S.watch = S.watch || {}).hw = { w: wHw.w, h: wHw.h, tw: wHw.tw, th: wHw.th, chip: wHw.chip, compressed: wHw.compressed }; save();
+    if (ghOn()) { try { await ghPut(`debug/watch-hw-${Date.now()}.json`, b64(JSON.stringify(wHw, null, 1)), 'watch hardware info'); } catch (e) { } }
+  } catch (e) { wHwErr = String(e.message || e); }
+}
+function faceDraw(cv, f, opt = {}) {
+  const W = cv.width, H = cv.height, x = cv.getContext('2d');
+  const g = x.createLinearGradient(0, 0, W, H); g.addColorStop(0, f.bg[0]); g.addColorStop(1, f.bg[1]);
+  x.fillStyle = g; x.fillRect(0, 0, W, H);
+  if (f.photo && opt.img) { const im = opt.img, sc = Math.max(W / im.width, H / im.height); x.drawImage(im, (W - im.width * sc) / 2, (H - im.height * sc) / 2, im.width * sc, im.height * sc); x.fillStyle = 'rgba(0,0,0,.25)'; x.fillRect(0, 0, W, H); }
+  const ink = opt.ink || f.ink, u = W / 100;
+  x.strokeStyle = ink; x.fillStyle = ink; x.globalAlpha = .18; x.lineWidth = u * 1.2;
+  if (f.mark === 'pulse') { x.beginPath(); const y = H * .78; x.moveTo(0, y); [[.3, 0], [.38, -.1], [.45, .08], [.52, -.16], [.58, 0], [1, 0]].forEach(([a, d]) => x.lineTo(W * a, y + H * d)); x.stroke(); }
+  if (f.mark === 'ring') { x.beginPath(); x.arc(W * .5, H * .62, W * .62, 0, Math.PI * 2); x.stroke(); }
+  if (f.mark === 'bar') { x.fillRect(W * .12, H * .74, W * .76, u * 1.6); }
+  x.globalAlpha = 1; x.textAlign = 'center';
+  const now = new Date();
+  x.font = `700 ${Math.round(W * .3)}px "IBM Plex Sans Arabic", sans-serif`;
+  x.fillText(`${pad2(now.getHours())}:${pad2(now.getMinutes())}`, W / 2, H * .45);
+  x.font = `600 ${Math.round(W * .075)}px "IBM Plex Sans Arabic", sans-serif`;
+  x.fillText(now.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }).toUpperCase(), W / 2, H * .58);
+  if (f.id === 'life' || f.id === 'gym') { x.font = `600 ${Math.round(W * .06)}px "IBM Plex Sans Arabic", sans-serif`; x.globalAlpha = .8; x.fillText(f.id === 'gym' ? 'NO EXCUSES' : 'LIFESTYLE', W / 2, H * .9); x.globalAlpha = 1; }
+}
+let facePhoto = null;
+function faceTab() {
+  if (!WD) return '<p class="muted">الأشكال بتشتغل في تطبيق الأندرويد بس.</p>';
+  const hw = wHw || (S.watch || {}).hw;
+  if (!hw && !wHwErr) return '<p class="muted" style="text-align:center;padding:30px 0">بيقرا مقاس شاشة الساعة…</p>';
+  if (!hw) return `<div class="verdict warn"><h3>مقدرتش أقرا الساعة</h3><p>${esc(wHwErr)}</p></div><button class="btn red block mt" id="hwLoad">جرّب تاني</button>`;
+  const sel = faceSel || { id: 'life', ink: null };
+  return `<p class="muted small" style="line-height:1.8">شاشة الساعة ${hw.w}×${hw.h}. اختار ثيم ولون الأرقام.</p>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">${FACES.map(f => `<button data-face="${f.id}" style="border:2.5px solid ${sel.id === f.id ? 'var(--red)' : 'transparent'};border-radius:18px;padding:3px;background:none"><canvas data-cv="${f.id}" width="${Math.round(hw.w / 3)}" height="${Math.round(hw.h / 3)}" style="width:100%;border-radius:14px;display:block"></canvas><div class="small" style="margin-top:4px">${f.name}</div></button>`).join('')}</div>
+    <div class="section-t">لون الأرقام</div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap">${FACE_INKS.map(c => `<button data-ink="${c}" style="width:38px;height:38px;border-radius:50%;background:${c};border:3px solid ${sel.ink === c ? 'var(--red)' : 'var(--line)'}"></button>`).join('')}</div>
+    ${sel.id === 'photo' ? `<button class="btn ghost block mt" id="facePic">${facePhoto ? 'غيّر الصورة' : 'اختار صورة'}</button><input type="file" accept="image/*" id="facePicIn" hidden>` : ''}
+    <div class="section-t">المعاينة</div>
+    <div style="display:flex;justify-content:center"><canvas id="faceBig" width="${hw.w}" height="${hw.h}" style="width:58%;border-radius:22px;box-shadow:0 6px 24px rgba(0,0,0,.18)"></canvas></div>
+    <button class="btn red block mt" id="faceSend" disabled>ابعت للساعة (في التحديث الجاي)</button>
+    <p class="muted small mt" style="line-height:1.8">الأرقام هتظهر على الساعة بنفس الشكل ده، والساعة هي اللي بتحدّثها.</p>`;
+}
+function faceBind(p) {
+  const hw = wHw || (S.watch || {}).hw;
+  if (wTab !== 'face') return;
+  if (!hw && !wHwErr && WD) { hwLoad().then(() => { if (wTab === 'face' && !$('#sheet').hidden) { closeSheet(); watchPage(); } }); return; }
+  const hl = $('#hwLoad', p); if (hl) hl.onclick = () => { wHwErr = ''; closeSheet(); watchPage(); };
+  if (!hw) return;
+  const sel = faceSel || (faceSel = { id: 'life', ink: null });
+  p.querySelectorAll('[data-cv]').forEach(cv => { const f = FACES.find(x => x.id === cv.dataset.cv); faceDraw(cv, f, { img: facePhoto }); });
+  const big = $('#faceBig', p); if (big) faceDraw(big, FACES.find(x => x.id === sel.id), { ink: sel.ink, img: facePhoto });
+  p.querySelectorAll('[data-face]').forEach(b => b.onclick = () => { sel.id = b.dataset.face; closeSheet(); watchPage(); });
+  p.querySelectorAll('[data-ink]').forEach(b => b.onclick = () => { sel.ink = b.dataset.ink; closeSheet(); watchPage(); });
+  const pk = $('#facePic', p), pin = $('#facePicIn', p);
+  if (pk && pin) { pk.onclick = () => pin.click(); pin.onchange = () => { const f = pin.files[0]; if (!f) return; const im = new Image(); im.onload = () => { facePhoto = im; closeSheet(); watchPage(); }; im.src = URL.createObjectURL(f); }; }
+}
 function watchPage() {
   const W = S.watch || {}, st = wSt;
   const ago = W.at ? Math.round((Date.now() - W.at) / 6e4) : null;
-  const tabs = [['data', 'البيانات'], ['notif', 'الإشعارات'], ['set', 'الإعدادات']];
+  const tabs = [['data', 'البيانات'], ['face', 'الشكل'], ['notif', 'الإشعارات'], ['set', 'الإعدادات']];
   openSheet(sheetHead('الساعة', W.name ? esc(W.name) : 'Amazfit Pop 3R') + `
     <div class="card pad" style="display:flex;align-items:center;gap:12px">
       <div style="font-size:30px">⌚</div>
@@ -780,7 +855,7 @@ function watchPage() {
       <button class="btn red sm" id="wdSync" style="flex:0 0 auto;width:auto;min-width:0;padding:0 18px;height:40px">مزامنة</button>
     </div>
     <div class="seg plain mt" style="margin:12px 0 4px">${tabs.map(([k, n]) => `<button class="${wTab === k ? 'on' : ''}" data-wt="${k}">${n}</button>`).join('')}</div>
-    <div id="wBody">${wTab === 'data' ? dataTab() : wTab === 'notif' ? notifTab(st) : settingsTab()}</div>`, p => {
+    <div id="wBody">${wTab === 'data' ? dataTab() : wTab === 'face' ? faceTab() : wTab === 'notif' ? notifTab(st) : settingsTab()}</div>`, p => {
     p.querySelectorAll('[data-wt]').forEach(b => b.onclick = () => { wTab = b.dataset.wt; closeSheet(); watchPage(); });
     $('#wdSync', p).onclick = async () => {
       if (!WD) { toast('ده شغال في تطبيق الأندرويد بس'); return; }
@@ -803,6 +878,7 @@ function watchPage() {
       try { await WD.setForward({ cfg: c }); } catch (e) { }
       watchDirectSheet();
     });
+    faceBind(p);
     // الإعدادات
     if (wTab === 'set' && WD && !wCfg && !wCfgErr) wCfgLoad().then(() => { if (wTab === 'set' && !$('#sheet').hidden) { closeSheet(); watchPage(); } });
     const ld = $('#wsLoad', p); if (ld) ld.onclick = () => { wCfg = null; wCfgErr = ''; closeSheet(); watchPage(); };
