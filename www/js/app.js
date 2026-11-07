@@ -713,6 +713,56 @@ const MY_WATCH = {
   dnd: { on: true, from: 23 * 60 + 30, to: 6 * 60 + 30 },
   lift: { on: true, from: 6 * 60, to: 23 * 60 + 30 }
 };
+/* ---------- فحص نظام الساعة (بنجيب الملف بس، مش بنركّب حاجة) ---------- */
+async function fwProbe(btn) {
+  const say = t => { if (btn) btn.textContent = t; };
+  if (!WD || !UP) { toast('ده شغال في تطبيق الأندرويد بس'); return; }
+  if (!ghOn()) { toast('لازم الكابتن يكون متفعّل (المستودع الخاص)'); return; }
+  const out = { at: new Date().toISOString(), steps: [] };
+  try {
+    say('بيقرا الساعة…');
+    const r = await WD.readRaw({ cmds: ['0101'] });
+    const b = hx2b(r['0101'] || '');
+    if (b.length < 150) throw new Error('الساعة مردّتش ببيانات الجهاز');
+    const str = (o, n) => String.fromCharCode(...b.slice(o, o + n)).replace(/\0[\s\S]*$/, '').trim();
+    const hw = { adapter: str(116, 8), fw: str(32, 8), hwv: str(24, 8), proto: str(40, 8), name: str(48, 24), mac: str(10, 14), ui: str(138, 8), chip: b[1], w: rd(b, 108, 2), h: rd(b, 110, 2), shape: b[146], raw: r['0101'] };
+    out.hw = hw;
+    say('بيجيب إعدادات الفحص…');
+    const cf = await gh('GET', 'fw/linwear.json');
+    const cfg = JSON.parse(decodeURIComponent(escape(atob(cf.content.replace(/\n/g, '')))));
+    const mac = (S.watch && S.watch.mac) || hw.mac;
+    const body = JSON.stringify({ adapterNum: hw.adapter, otaVersion: hw.fw, uiVersion: hw.ui, netVersion: hw.fw });
+    let res = null;
+    for (const host of cfg.hosts) {
+      say('بيسأل سيرفر الساعة…');
+      try {
+        const x = await UP.watchApi({ url: host + cfg.path, body, client: cfg.client, salt: cfg.salt, name: (S.watch && S.watch.name) || hw.name, num: hw.adapter, mac, ver: hw.fw });
+        out.steps.push({ host, code: x.code, text: (x.text || '').slice(0, 3000) });
+        if (x.code === 200) { res = x; break; }
+      } catch (e) { out.steps.push({ host, err: String(e.message || e) }); }
+    }
+    if (res) {
+      let j = null; try { j = JSON.parse(res.text); } catch (e) { }
+      const list = (j && j.data && (j.data.upgradeList || [])) || [];
+      out.files = [];
+      for (const f of list) {
+        if (!f.url) continue;
+        say('بينزّل ملف النظام…');
+        try {
+          const d = await UP.fetchFile({ url: f.url });
+          const name = (f.url.split('?')[0].split('/').pop() || 'fw.bin').replace(/[^\w.-]/g, '_');
+          say(`بيرفع ${Math.round(d.size / 1024)} كيلو…`);
+          await ghPut(`fw/files/${name}`, d.b64, 'watch firmware file');
+          out.files.push({ name, size: d.size, url: f.url });
+        } catch (e) { out.files.push({ url: f.url, err: String(e.message || e) }); }
+      }
+    }
+  } catch (e) { out.err = String(e.message || e); }
+  try { await ghPut(`fw/probe-${Date.now()}.json`, b64(JSON.stringify(out, null, 1)), 'watch firmware probe'); } catch (e) { }
+  const ok = out.files && out.files.some(f => f.size);
+  toast(ok ? 'الملف وصل للكابتن ✓ قولّي في الشات' : 'اتبعت للكابتن اللي حصل – قولّي في الشات');
+  say('🔬 جيب ملف نظام الساعة (فحص بس)');
+}
 function settingsTab() {
   if (!WD) return '<p class="muted">الإعدادات بتشتغل في تطبيق الأندرويد بس.</p>';
   if (!wCfg) return wCfgErr ? `<div class="verdict warn"><h3>مقدرتش أقرا إعدادات الساعة</h3><p>${esc(wCfgErr)}</p></div><button class="btn red block mt" id="wsLoad">جرّب تاني</button>` : '<p class="muted" style="text-align:center;padding:30px 0">بيقرا إعدادات الساعة…</p>';
@@ -731,7 +781,9 @@ function settingsTab() {
     <div class="grid2"><button class="btn ghost sm" id="wdFind">📳 دوّر على الساعة</button><button class="btn ghost sm" id="wsLoad">🔄 اقرا الإعدادات تاني</button></div>
     <div class="section-t">جاي في التحديثات الجاية</div>
     ${WD_SOON.map(x => `<div class="hrow"><span class="v">${x[0]} ${x[1]}${x[2] ? `<small>${x[2]}</small>` : ''}</span><span class="d muted small">قريب</span></div>`).join('')}
-    <button class="btn ghost block sm mt" id="wdLog">انسخ السجل (لو فيه مشكلة ابعتهولي)</button>`;
+    <button class="btn ghost block sm mt" id="wdLog">انسخ السجل (لو فيه مشكلة ابعتهولي)</button>
+    <button class="btn ghost block sm mt" id="fwGo">🔬 جيب ملف نظام الساعة (فحص بس)</button>
+    <p class="muted small" style="line-height:1.8;margin-top:6px">بيجيب الملف من سيرفر الشركة ويبعته للكابتن يفحصه. مش بيركّب ولا بيغيّر أي حاجة في الساعة.</p>`;
 }
 function dataTab() {
   const W = S.watch || {}, t = W.today || {}, d0 = today(), h = S.health[d0] || {};
@@ -911,6 +963,7 @@ function watchPage() {
       toast(bad.length ? `مقدرتش أغيّر: ${bad.join('، ')}` : 'اتحفظت في الساعة ✓');
       closeSheet(); watchPage();
     };
+    const fg = $('#fwGo', p); if (fg) fg.onclick = async () => { fg.disabled = true; await fwProbe(fg); fg.disabled = false; };
     const sv = $('#wsSave', p); if (sv) sv.onclick = () => saveAll(collect(), sv);
     const mn = $('#wsMine', p); if (mn) mn.onclick = () => saveAll(MY_WATCH, mn);
   });

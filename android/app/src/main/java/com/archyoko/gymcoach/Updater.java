@@ -109,4 +109,64 @@ public class Updater extends Plugin {
             } catch (Exception e) { call.reject("التحميل وقف: " + e.getMessage()); }
         }).start();
     }
+
+    // ---------------- فحص نظام الساعة (قراءة بس) ----------------
+    static String md5(String s) throws Exception {
+        java.security.MessageDigest d = java.security.MessageDigest.getInstance("MD5");
+        StringBuilder sb = new StringBuilder();
+        for (byte b : d.digest(s.getBytes("UTF-8"))) sb.append(String.format("%02x", b));
+        return sb.toString();
+    }
+
+    /** POST لسيرفر الساعة. الثوابت (client/salt) بتيجي من المستودع الخاص مش من الكود. */
+    @PluginMethod public void watchApi(PluginCall call) {
+        new Thread(() -> {
+            try {
+                String url = call.getString("url", ""), body = call.getString("body", "{}");
+                String client = call.getString("client", ""), salt = call.getString("salt", "");
+                String name = call.getString("name", ""), num = call.getString("num", ""), mac = call.getString("mac", ""), ver = call.getString("ver", "");
+                long ts = System.currentTimeMillis() / 1000;
+                String sign = md5(mac + ":" + name + ":" + num + ":" + client + ":" + salt + ":" + ts) + ":" + ts;
+                HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
+                c.setConnectTimeout(15000); c.setReadTimeout(30000);
+                c.setRequestMethod("POST"); c.setDoOutput(true);
+                c.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
+                c.setRequestProperty("Accept-Encoding", "identity");
+                c.setRequestProperty("Phone-model", Build.MODEL + " Android" + Build.VERSION.RELEASE);
+                c.setRequestProperty("App-Type", "15");
+                c.setRequestProperty("Accept-Language", "en");
+                c.setRequestProperty("Sdk-Type", "2");
+                c.setRequestProperty("Ota-Version", ver);
+                c.setRequestProperty("Bluetooth-Name", name);
+                c.setRequestProperty("Bluetooth-Adapter", num);
+                c.setRequestProperty("Bluetooth-Address", mac);
+                c.setRequestProperty("Device-Id", mac);
+                c.setRequestProperty("Device-Name", name);
+                c.setRequestProperty("Device-Model", num);
+                c.setRequestProperty("Client-Id", client);
+                c.setRequestProperty("Sign", sign);
+                c.getOutputStream().write(body.getBytes("UTF-8"));
+                int code = c.getResponseCode();
+                InputStream in = code >= 400 ? c.getErrorStream() : c.getInputStream();
+                ByteArrayOutputStream bo = new ByteArrayOutputStream();
+                if (in != null) { byte[] buf = new byte[4096]; int n; while ((n = in.read(buf)) > 0) bo.write(buf, 0, n); in.close(); }
+                call.resolve(new JSObject().put("code", code).put("text", bo.toString("UTF-8")));
+            } catch (Exception e) { call.reject(String.valueOf(e.getMessage())); }
+        }).start();
+    }
+
+    /** ينزّل ملف ويرجّعه base64 (لحد 20 ميجا) */
+    @PluginMethod public void fetchFile(PluginCall call) {
+        new Thread(() -> {
+            try {
+                HttpURLConnection c = open(call.getString("url", ""));
+                InputStream in = c.getInputStream();
+                ByteArrayOutputStream bo = new ByteArrayOutputStream();
+                byte[] buf = new byte[65536]; int n;
+                while ((n = in.read(buf)) > 0) { bo.write(buf, 0, n); if (bo.size() > 20 * 1024 * 1024) throw new Exception("الملف أكبر من 20 ميجا"); }
+                in.close();
+                call.resolve(new JSObject().put("size", bo.size()).put("b64", android.util.Base64.encodeToString(bo.toByteArray(), android.util.Base64.NO_WRAP)));
+            } catch (Exception e) { call.reject(String.valueOf(e.getMessage())); }
+        }).start();
+    }
 }
