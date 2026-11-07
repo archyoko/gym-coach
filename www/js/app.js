@@ -761,6 +761,7 @@ function notifTab(st) {
       ${tg('calls', '📞 المكالمات', c.calls !== false, 'اسم المتصل يظهر والساعة تهزّ')}
       ${c.calls !== false && !st.callPerm ? `<div class="note mt"><span class="i">📞</span><span>عشان المكالمات تظهر باسم المتصل: اضغط الزرار ← وافق على كل الأذونات.</span></div><button class="btn red block sm mt" id="fwCall">اسمح بالمكالمات</button>` : ''}
       ${tg('self', '💪 تذكيرات Lifestyle', c.self !== false, 'الراحة بين السِتات، الكرياتين، المية، النوم، رسالة الكابتن')}
+      <button class="hrow" id="fwWk" style="width:100%;border:0;background:none;text-align:inherit"><span class="v">🏋️ التمرين على الساعة<small>السِت الجاي والوزن والراحة، والسعرات في الآخر</small></span><span class="d"><b class="${S.settings.wdWorkout !== false ? 'up' : 'muted'}">${S.settings.wdWorkout !== false ? '✓ شغال' : 'مقفول'}</b></span></button>
       <div class="section-t">التطبيقات</div>
       ${FWD_APPS.map(([pk, n]) => tg('app:' + pk, n, appOn(pk))).join('')}
       ${tg('others', 'أي تطبيق تاني', !!c.others)}
@@ -868,6 +869,7 @@ function watchPage() {
     // الإشعارات
     const acc = $('#fwAcc', p); if (acc) acc.onclick = () => WD.openNotifAccess();
     const cl = $('#fwCall', p); if (cl) cl.onclick = async () => { try { await WD.askCallPerm(); } catch (e) { } closeSheet(); watchDirectSheet(); };
+    const wk = $('#fwWk', p); if (wk) wk.onclick = () => { S.settings.wdWorkout = S.settings.wdWorkout === false; save(); closeSheet(); watchPage(); };
     const te = $('#fwTest', p); if (te) te.onclick = async () => { te.disabled = true; te.textContent = 'بيبعت…'; try { await WD.message({ title: 'الكابتن', text: 'أهلاً يا محمد 💪 الساعة مربوطة بـ Lifestyle' }); toast('اتبعتت – بص على الساعة'); } catch (e) { toast(String(e.message || e)); } te.disabled = false; te.textContent = 'ابعت رسالة تجربة للساعة'; };
     p.querySelectorAll('[data-fw]').forEach(b => b.onclick = async () => {
       let c = {}; try { c = JSON.parse(st.fwd || '{}'); } catch (e) { }
@@ -1225,7 +1227,7 @@ function dailySummary(d) {
   return { date: d, type: dayType(d), weight: e.w, steps: e.steps, active: e.active, burnEst: e.kcal, sleepMin: e.sleep, creatine: e.creatine, water: e.water, feel: x.feel,
     meals: x.meals || {}, recipes: x.recipes || null, choice: x.choice, extras: x.extras || [], intake: intake(d), note: x.note, body: b || null,
     readiness: readiness(d).level, sleepQ: (q => q ? { score: q.score, zepp: q.zepp, level: q.level, deep: q.z.deep, rem: q.z.rem, light: q.z.light, awake: q.z.awake, bed: q.z.bed, wake: q.z.wake, feel: x.sleepFeel } : null)(sleepQ(d)), photos: (S.mealPhotos[d] || []).map(m => ({ meal: m.meal, file: `photos/meals/${m.key.replace(/\|/g, '_')}.jpg` })),
-    sessions: ses.map(([k, s]) => ({ key: k, rpe: s.rpe, pain: s.painAreas, note: s.note, ex: Object.fromEntries(Object.entries(s.ex).map(([lk, a]) => [lk, a.map(z => [z.w, z.r, z.rir, z.p])])) })) };
+    sessions: ses.map(([k, s]) => ({ key: k, rpe: s.rpe, pain: s.painAreas, note: s.note, burn: s.burn, rest: s.rest, min: s.end && s.start ? Math.round((s.end - s.start) / 6e4) : null, ex: Object.fromEntries(Object.entries(s.ex).map(([lk, a]) => [lk, a.map(z => [z.w, z.r, z.rir, z.p])])) })) };
 }
 async function ghSync(loud) {
   if (!ghOn() || ghBusy) return;
@@ -1701,7 +1703,7 @@ function renderWorkoutList(el) {
     const first = exList(d.key, w).find(e => e.kind !== 'warm' && e.img) || exList(d.key, w).find(e => e.img);
     const n = exList(d.key, w).length;
     return `<button class="drow ${off ? 'off' : ''}" data-open="${d.key}"><span class="ph">${first ? `<img src="media/${first.img}/0.jpg" alt="" loading="lazy">` : ''}${done ? '<span class="ok">✓</span>' : ''}</span>
-      <div><span class="pill ${date === td ? 'today' : ''}">اليوم ${ORD[i]} · ${d.label} ${short(date)}</span><b>${d.title}</b><small>${off ? 'اتشال الأسبوع ده (أسبوع مزنوق)' : done ? '✓ خلصته' : `${n} تمارين · ~${dayMinutes(d.key, w)} دقيقة`}</small></div>
+      <div><span class="pill ${date === td ? 'today' : ''}">اليوم ${ORD[i]} · ${d.label} ${short(date)}</span><b>${d.title}</b><small>${off ? 'اتشال الأسبوع ده (أسبوع مزنوق)' : done ? `✓ خلصته${(() => { const ss = S.logs[sessKey(w, d.key)] || {}; return (ss.burn ? ` · 🔥 ${ss.burn.kcal} سعر` : '') + (ss.rest ? ` · راحة ${clock(ss.rest.avg)}` : ''); })()}` : `${n} تمارين · ~${dayMinutes(d.key, w)} دقيقة`}</small></div>
       <svg class="arr" viewBox="0 0 24 24"><path d="M19 12H5M11 6l-6 6 6 6"/></svg></button>`; }).join('')}
   <button class="link small" id="busyBtn" style="margin:14px 2px 0">${isBusy(w) ? 'رجّع الأسبوع 4 أيام' : 'أسبوع مزنوق؟ خليه 3 أيام'}</button>
   ${w > 1 ? `<button class="link small" id="wOld" style="display:block;margin:10px 2px 0;color:var(--ink2)">الأسابيع اللي فاتت</button>` : ''}`;
@@ -1853,6 +1855,58 @@ function logSheet(w, dk, ex, onSaved, editRef) {
 
 /* ================= مشغّل التمرين ================= */
 let P = null; let pTimer = null;
+/* ================= التمرين على الساعة: رسايل + سعرات + الراحة ================= */
+async function wMsg(text, title = 'Lifestyle') {
+  if (!WD || S.settings.wdWorkout === false) return;
+  try { await WD.message({ title, text, type: 0 }); } catch (e) { }
+}
+/* سعرات من النبض (Keytel 2005 – رجالة) */
+const keytel = (hr, kg, age) => Math.max(0, (-55.0969 + 0.6309 * hr + 0.1988 * kg + 0.2017 * age) / 4.184);
+function sessSets(sess) { return Object.entries(sess.ex || {}).flatMap(([lk, a]) => a.map(x => Object.assign({ lk }, x))).filter(x => x.t).sort((a, b) => a.t - b.t); }
+/* الراحة الفعلية = الفرق بين نهاية سِت ونهاية اللي بعده − ~40 ثانية للسِت نفسه */
+function restStats(sess, dk, w) {
+  const sets = sessSets(sess); if (sets.length < 2) return null;
+  const plan = {}; for (const e of exList(dk, w, 'green')) plan[e.lk] = e.rest || 0;
+  const rests = [];
+  for (let i = 1; i < sets.length; i++) {
+    const gap = (sets[i].t - sets[i - 1].t) / 1000 - 40;
+    if (gap < 15 || gap > 15 * 60) continue;
+    rests.push({ got: Math.round(gap), want: plan[sets[i - 1].lk] || 0, change: sets[i].lk !== sets[i - 1].lk });
+  }
+  if (!rests.length) return null;
+  const avg = Math.round(rests.reduce((a, r) => a + r.got, 0) / rests.length);
+  const wantAvg = Math.round(rests.reduce((a, r) => a + (r.want || r.got), 0) / rests.length);
+  const long = rests.filter(r => r.want && r.got > r.want + 60).length;
+  return { n: rests.length, avg, want: wantAvg, long };
+}
+function sessBurn(sess) {
+  const a = (sess.start || 0) / 1000, b = (sess.end || Date.now()) / 1000, W = S.watch || {};
+  const kg = latestWeight(sess.date || today()), age = S.settings.age || 34;
+  // 1) تمرين متسجّل على الساعة في نفس الوقت
+  const ws = (W.workouts || []).filter(x => x.begin && x.end && x.end > a - 300 && x.begin < b + 300);
+  if (ws.length) { const k = ws.reduce((s, x) => s + (x.kcal || 0), 0); if (k > 0) return { kcal: k, src: 'watch', avgHR: ws[0].avgHR || null, maxHR: Math.max(...ws.map(x => x.maxHR || 0)) || null }; }
+  // 2) نبض الساعة أثناء التمرين
+  const hr = (W.hr || []).filter(x => x[0] >= a && x[0] <= b).map(x => x[1]);
+  const min = (b - a) / 60;
+  if (hr.length >= 2 && min > 10) { const avg = hr.reduce((s, x) => s + x, 0) / hr.length; return { kcal: Math.round(keytel(avg, kg, age) * min), src: 'hr', avgHR: Math.round(avg), maxHR: Math.max(...hr) }; }
+  // 3) تقدير: تمرين حديد ~3.5 MET متوسط مع الراحة
+  if (min > 10) return { kcal: Math.round(3.5 * kg * min / 60), src: 'est', avgHR: null, maxHR: null };
+  return null;
+}
+async function afterWorkout(key) {
+  const sess = S.logs[key]; if (!sess) return;
+  if (WD) { S.watch = S.watch || {}; S.watch.at = 0; await watchSync(false); }
+  const burn = sessBurn(sess); if (burn) sess.burn = burn;
+  const [w, dk] = key.split('-').length > 1 ? [+key.split('-')[0].replace(/\D/g, ''), key.split('-').slice(1).join('-')] : [0, ''];
+  try { const rs = restStats(sess, sess.dk || dk, sess.w || w); if (rs) sess.rest = rs; } catch (e) { }
+  if (burn && sess.date) { const h = (S.health[sess.date] = S.health[sess.date] || {}); if (!h.wkcal || burn.src !== 'watch') { h.wkcal = Math.max(h.wkcal || 0, burn.kcal); h.wmin = Math.round(((sess.end || Date.now()) - sess.start) / 6e4); } }
+  save();
+  if (burn) {
+    const src = { watch: 'من الساعة', hr: 'من نبض الساعة', est: 'تقدير' }[burn.src];
+    toast(`🔥 ${burn.kcal} سعر (${src})${burn.avgHR ? ` · نبض ${burn.avgHR}` : ''}`);
+    wMsg(`خلّصت 💪 حرقت ${burn.kcal} سعر${sess.rest ? ` · متوسط راحتك ${clock(sess.rest.avg)}` : ''}`);
+  }
+}
 function startPlayer(w, dk) {
   const adj = (w === curWeek() && (plannedDate(w, dk) <= today())) ? readiness().level : 'green';
   const list = exList(dk, w, adj);
@@ -1862,7 +1916,8 @@ function startPlayer(w, dk) {
   const saved = S.active && S.active.w === w && S.active.dk === dk ? S.active : null;
   P = saved || { w, dk, idx, adj, started: Date.now(), pausedAt: null, pausedMs: 0, rest: null };
   if (!saved) P.idx = idx;
-  ensureSess(w, dk).start = ensureSess(w, dk).start || Date.now();
+  const ses0 = ensureSess(w, dk); const fresh = !ses0.start; ses0.start = ses0.start || Date.now(); ses0.w = w; ses0.dk = dk;
+  if (fresh) wMsg(`${dayByKey(dk).title} بدأ 💪 أول تمرين: ${list[idx] ? list[idx].name : ''}. شغّل 'تمرين قوة' على الساعة عشان تحسب السعرات`);
   S.active = P; save();
   $('#player').hidden = false; document.body.style.overflow = 'hidden';
   keepAwake(true);
@@ -1918,7 +1973,9 @@ function drawPlayer() {
     $('#pEnd').onclick = () => {
       sess.end = Date.now(); if (rpe) sess.rpe = rpe; sess.painAreas = [...pa].filter(x => x !== 'مفيش'); const n = $('#pNote').value.trim(); if (n) sess.note = n;
       if (n) S.inbox.push({ t: Date.now(), text: `بعد ${dayByKey(P.dk).title}: ${n}` });
-      save(); closePlayer(); scheduleReminders(); ghSoon(5000); toast('اتسجّل التمرين ✓');
+      const endKey = sessKey(P.w, P.dk);
+      save(); closePlayer(); scheduleReminders(); toast('اتسجّل التمرين ✓');
+      setTimeout(() => afterWorkout(endKey).then(() => ghSoon(3000)), 2500);
     };
     $('#pBack').onclick = () => { P.finished = false; drawPlayer(); };
     return;
@@ -1983,6 +2040,8 @@ function startRest(sec, advance) {
   P.rest = { until: Date.now() + sec * 1000, total: sec, advance }; S.active = P; save(); drawPlayer();
   const list = exList(P.dk, P.w, P.adj); const nx = advance ? list[Math.min(P.idx + 1, list.length - 1)] : list[P.idx];
   restNotify(P.rest.until, `${advance ? 'التمرين الجاي' : 'المجموعة الجاية'}: ${nx.name}`);
+  const ss = ensureSess(P.w, P.dk), done = (ss.ex[nx.lk] || []).length, sg = suggest(nx, sessKey(P.w, P.dk));
+  wMsg(`راحة ${clock(sec)} ⏱ الجاي: ${nx.name} – سِت ${done + 1} من ${nx.sets}${sg && sg.w ? ` · ${fmt(sg.w, 2)} كجم` : ''} × ${repsTxt(nx)}`);
 }
 function painStop(ex) {
   openSheet(sheetHead('وقّف التمرين ده', 'الوجع عدّى 3/10') + `<p style="line-height:1.8">متكمّلش ${esc(ex.name)} النهارده. ${ex.pain ? 'اعمل بداله ثبات خفيف 30 ثانية بزاوية 90° لو مش بيوجع، أو سيبه خالص.' : ''} لو الوجع فضل لبكرة الصبح أو زاد، المرة الجاية جرّب البديل أو قلّل الوزن للنص.</p>
