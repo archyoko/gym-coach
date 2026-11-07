@@ -771,12 +771,12 @@ function notifTab(st) {
 /* ---------- شكل الساعة (ثيمات) ---------- */
 let wHw = null, wHwErr = '', faceSel = null;
 const FACES = [
-  { id: 'life', name: 'Lifestyle', bg: ['#ff6a2b', '#e8531a'], ink: '#ffffff', mark: 'pulse' },
-  { id: 'night', name: 'أسود بسيط', bg: ['#0d0d10', '#1b1b22'], ink: '#ff6a2b', mark: 'none' },
-  { id: 'navy', name: 'كحلي', bg: ['#0f1c3a', '#24407a'], ink: '#ffffff', mark: 'ring' },
-  { id: 'gym', name: 'جيم', bg: ['#111111', '#2a2a2a'], ink: '#ffc83d', mark: 'bar' },
-  { id: 'mint', name: 'أخضر هادي', bg: ['#0e3b2e', '#1f7a5c'], ink: '#eafff6', mark: 'ring' },
-  { id: 'photo', name: 'صورة من عندك', bg: ['#333', '#555'], ink: '#ffffff', mark: 'none', photo: true }
+  { id: 'navy', name: 'Navy Pilot', c1: '#2a4f9e', c2: '#0b1a3d', ink: '#ffffff', track: '#ffffff', num: true },
+  { id: 'steel', name: 'Silver', c1: '#c9ccd2', c2: '#6d727b', ink: '#111111', track: '#1a1a1a', num: true },
+  { id: 'black', name: 'Black Sport', c1: '#2a2a2e', c2: '#060607', ink: '#ffffff', track: '#ff6a2b', num: false },
+  { id: 'green', name: 'Emerald', c1: '#1f7a5c', c2: '#062a1f', ink: '#f2fff9', track: '#e8d9a8', num: true },
+  { id: 'life', name: 'Lifestyle', c1: '#ff7a3d', c2: '#b8400f', ink: '#ffffff', track: '#ffffff', num: false },
+  { id: 'photo', name: 'صورتك', c1: '#444', c2: '#111', ink: '#ffffff', track: '#ffffff', num: false, photo: true }
 ];
 const FACE_INKS = ['#ffffff', '#ff6a2b', '#ffc83d', '#3d9bff', '#2fb36d', '#000000'];
 function parseHw(h) {
@@ -796,22 +796,39 @@ async function hwLoad() {
   } catch (e) { wHwErr = String(e.message || e); }
 }
 function faceDraw(cv, f, opt = {}) {
-  const W = cv.width, H = cv.height, x = cv.getContext('2d');
-  const g = x.createLinearGradient(0, 0, W, H); g.addColorStop(0, f.bg[0]); g.addColorStop(1, f.bg[1]);
+  const W = cv.width, H = cv.height, x = cv.getContext('2d'), cx = W / 2, cy = H / 2, R = Math.min(W, H) / 2, round = opt.round !== false;
+  x.clearRect(0, 0, W, H); x.save();
+  if (round) { x.beginPath(); x.arc(cx, cy, R, 0, Math.PI * 2); x.clip(); }
+  // خلفية sunburst زي الساعات الكلاسيك
+  const g = x.createRadialGradient(cx, cy * .85, R * .1, cx, cy, R * 1.05); g.addColorStop(0, f.c1); g.addColorStop(1, f.c2);
   x.fillStyle = g; x.fillRect(0, 0, W, H);
-  if (f.photo && opt.img) { const im = opt.img, sc = Math.max(W / im.width, H / im.height); x.drawImage(im, (W - im.width * sc) / 2, (H - im.height * sc) / 2, im.width * sc, im.height * sc); x.fillStyle = 'rgba(0,0,0,.25)'; x.fillRect(0, 0, W, H); }
-  const ink = opt.ink || f.ink, u = W / 100;
-  x.strokeStyle = ink; x.fillStyle = ink; x.globalAlpha = .18; x.lineWidth = u * 1.2;
-  if (f.mark === 'pulse') { x.beginPath(); const y = H * .78; x.moveTo(0, y); [[.3, 0], [.38, -.1], [.45, .08], [.52, -.16], [.58, 0], [1, 0]].forEach(([a, d]) => x.lineTo(W * a, y + H * d)); x.stroke(); }
-  if (f.mark === 'ring') { x.beginPath(); x.arc(W * .5, H * .62, W * .62, 0, Math.PI * 2); x.stroke(); }
-  if (f.mark === 'bar') { x.fillRect(W * .12, H * .74, W * .76, u * 1.6); }
-  x.globalAlpha = 1; x.textAlign = 'center';
-  const now = new Date();
-  x.font = `700 ${Math.round(W * .3)}px "IBM Plex Sans Arabic", sans-serif`;
-  x.fillText(`${pad2(now.getHours())}:${pad2(now.getMinutes())}`, W / 2, H * .45);
-  x.font = `600 ${Math.round(W * .075)}px "IBM Plex Sans Arabic", sans-serif`;
-  x.fillText(now.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }).toUpperCase(), W / 2, H * .58);
-  if (f.id === 'life' || f.id === 'gym') { x.font = `600 ${Math.round(W * .06)}px "IBM Plex Sans Arabic", sans-serif`; x.globalAlpha = .8; x.fillText(f.id === 'gym' ? 'NO EXCUSES' : 'LIFESTYLE', W / 2, H * .9); x.globalAlpha = 1; }
+  if (f.photo && opt.img) { const im = opt.img, sc = Math.max(W / im.width, H / im.height); x.drawImage(im, (W - im.width * sc) / 2, (H - im.height * sc) / 2, im.width * sc, im.height * sc); x.fillStyle = 'rgba(0,0,0,.3)'; x.fillRect(0, 0, W, H); }
+  if (!f.photo) { x.globalAlpha = .06; x.strokeStyle = '#fff'; x.lineWidth = R * .006; for (let i = 0; i < 180; i++) { const a = i / 180 * Math.PI * 2; x.beginPath(); x.moveTo(cx, cy); x.lineTo(cx + Math.cos(a) * R, cy + Math.sin(a) * R); x.stroke(); } x.globalAlpha = 1; }
+  // تدريج الدقايق والساعات
+  const tr = opt.track || f.track;
+  x.strokeStyle = tr; x.fillStyle = tr;
+  for (let i = 0; i < 60; i++) {
+    const a = i / 60 * Math.PI * 2 - Math.PI / 2, big = i % 5 === 0, r1 = R * .96, r2 = R * (big ? .84 : .9);
+    x.lineWidth = R * (big ? .028 : .011); x.globalAlpha = big ? 1 : .85;
+    if (f.num && big && i % 15 === 0) continue;
+    x.beginPath(); x.moveTo(cx + Math.cos(a) * r1, cy + Math.sin(a) * r1); x.lineTo(cx + Math.cos(a) * r2, cy + Math.sin(a) * r2); x.stroke();
+  }
+  x.globalAlpha = 1;
+  if (f.num) { x.font = `700 ${Math.round(R * .17)}px "IBM Plex Sans Arabic", sans-serif`; x.textAlign = 'center'; x.textBaseline = 'middle'; [[12, -90], [3, 0], [6, 90], [9, 180]].forEach(([n, d]) => { const a = d * Math.PI / 180; x.fillText(String(n), cx + Math.cos(a) * R * .8, cy + Math.sin(a) * R * .8); }); }
+  else { x.beginPath(); x.moveTo(cx, cy - R * .97); x.lineTo(cx - R * .045, cy - R * .86); x.lineTo(cx + R * .045, cy - R * .86); x.closePath(); x.fill(); }
+  // الوقت والتاريخ (الساعة هي اللي بتحدّثهم)
+  const ink = opt.ink || f.ink, now = new Date();
+  x.fillStyle = ink; x.textAlign = 'center'; x.textBaseline = 'alphabetic';
+  x.font = `600 ${Math.round(R * .38)}px "IBM Plex Sans Arabic", sans-serif`;
+  x.fillText(`${pad2(now.getHours())}:${pad2(now.getMinutes())}`, cx, cy + R * .12);
+  const dt = now.toLocaleDateString('en-GB', { weekday: 'short' }) + ' ' + pad2(now.getDate());
+  x.font = `600 ${Math.round(R * .1)}px "IBM Plex Sans Arabic", sans-serif`;
+  const tw = x.measureText(dt).width + R * .08;
+  x.globalAlpha = .9; x.strokeStyle = ink; x.lineWidth = R * .008; x.strokeRect(cx - tw / 2, cy - R * .52, tw, R * .15); x.globalAlpha = 1;
+  x.fillText(dt, cx, cy - R * .405);
+  if (f.id === 'life' || f.id === 'black') { x.font = `600 ${Math.round(R * .065)}px "IBM Plex Sans Arabic", sans-serif`; x.globalAlpha = .75; x.fillText('LIFESTYLE', cx, cy + R * .42); x.globalAlpha = 1; }
+  x.restore();
+  if (round) { x.beginPath(); x.arc(cx, cy, R - 1, 0, Math.PI * 2); x.strokeStyle = 'rgba(0,0,0,.25)'; x.lineWidth = 2; x.stroke(); }
 }
 let facePhoto = null;
 function faceTab() {
@@ -819,16 +836,16 @@ function faceTab() {
   const hw = wHw || (S.watch || {}).hw;
   if (!hw && !wHwErr) return '<p class="muted" style="text-align:center;padding:30px 0">بيقرا مقاس شاشة الساعة…</p>';
   if (!hw) return `<div class="verdict warn"><h3>مقدرتش أقرا الساعة</h3><p>${esc(wHwErr)}</p></div><button class="btn red block mt" id="hwLoad">جرّب تاني</button>`;
-  const sel = faceSel || { id: 'life', ink: null };
+  const sel = faceSel || { id: 'navy', ink: null };
   return `<p class="muted small" style="line-height:1.8">شاشة الساعة ${hw.w}×${hw.h}. اختار ثيم ولون الأرقام.</p>
-    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">${FACES.map(f => `<button data-face="${f.id}" style="border:2.5px solid ${sel.id === f.id ? 'var(--red)' : 'transparent'};border-radius:18px;padding:3px;background:none"><canvas data-cv="${f.id}" width="${Math.round(hw.w / 3)}" height="${Math.round(hw.h / 3)}" style="width:100%;border-radius:14px;display:block"></canvas><div class="small" style="margin-top:4px">${f.name}</div></button>`).join('')}</div>
-    <div class="section-t">لون الأرقام</div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">${FACES.map(f => `<button data-face="${f.id}" style="border:2.5px solid ${sel.id === f.id ? 'var(--red)' : 'transparent'};border-radius:50%;padding:3px;background:none"><canvas data-cv="${f.id}" width="${Math.round(hw.w / 3)}" height="${Math.round(hw.h / 3)}" style="width:100%;display:block"></canvas><div class="small" style="margin-top:4px">${f.name}</div></button>`).join('')}</div>
+    <div class="section-t">لون الوقت</div>
     <div style="display:flex;gap:10px;flex-wrap:wrap">${FACE_INKS.map(c => `<button data-ink="${c}" style="width:38px;height:38px;border-radius:50%;background:${c};border:3px solid ${sel.ink === c ? 'var(--red)' : 'var(--line)'}"></button>`).join('')}</div>
     ${sel.id === 'photo' ? `<button class="btn ghost block mt" id="facePic">${facePhoto ? 'غيّر الصورة' : 'اختار صورة'}</button><input type="file" accept="image/*" id="facePicIn" hidden>` : ''}
     <div class="section-t">المعاينة</div>
-    <div style="display:flex;justify-content:center"><canvas id="faceBig" width="${hw.w}" height="${hw.h}" style="width:58%;border-radius:22px;box-shadow:0 6px 24px rgba(0,0,0,.18)"></canvas></div>
+    <div style="display:flex;justify-content:center"><canvas id="faceBig" width="${hw.w}" height="${hw.h}" style="width:70%;border-radius:50%;box-shadow:0 0 0 10px #c7c9ce,0 0 0 13px #8d9097,0 10px 30px rgba(0,0,0,.25)"></canvas></div>
     <button class="btn red block mt" id="faceSend" disabled>ابعت للساعة (في التحديث الجاي)</button>
-    <p class="muted small mt" style="line-height:1.8">الأرقام هتظهر على الساعة بنفس الشكل ده، والساعة هي اللي بتحدّثها.</p>`;
+    <p class="muted small mt" style="line-height:1.8">الوقت والتاريخ بيتحدّثوا لوحدهم على الساعة. العقارب المتحركة مش متاحة في الأشكال اللي بنعملها – الوقت بيظهر أرقام.</p>`;
 }
 function faceBind(p) {
   const hw = wHw || (S.watch || {}).hw;
@@ -836,7 +853,7 @@ function faceBind(p) {
   if (!hw && !wHwErr && WD) { hwLoad().then(() => { if (wTab === 'face' && !$('#sheet').hidden) { closeSheet(); watchPage(); } }); return; }
   const hl = $('#hwLoad', p); if (hl) hl.onclick = () => { wHwErr = ''; closeSheet(); watchPage(); };
   if (!hw) return;
-  const sel = faceSel || (faceSel = { id: 'life', ink: null });
+  const sel = faceSel || (faceSel = { id: 'navy', ink: null });
   p.querySelectorAll('[data-cv]').forEach(cv => { const f = FACES.find(x => x.id === cv.dataset.cv); faceDraw(cv, f, { img: facePhoto }); });
   const big = $('#faceBig', p); if (big) faceDraw(big, FACES.find(x => x.id === sel.id), { ink: sel.ink, img: facePhoto });
   p.querySelectorAll('[data-face]').forEach(b => b.onclick = () => { sel.id = b.dataset.face; closeSheet(); watchPage(); });
