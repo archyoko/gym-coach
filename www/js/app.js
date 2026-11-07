@@ -53,7 +53,7 @@ function load() {
   try { raw = JSON.parse(localStorage.getItem(KEY) || 'null'); } catch (e) { raw = null; }
   if (!raw) raw = JSON.parse(JSON.stringify(SEED));
   raw.settings = Object.assign({}, SEED.settings, raw.settings || {});
-  for (const k of ['days', 'health', 'logs', 'body', 'swaps', 'foodSwaps', 'photos', 'checkins', 'repOverride', 'mealPhotos', 'coach']) raw[k] = raw[k] || {};
+  for (const k of ['days', 'health', 'logs', 'body', 'swaps', 'foodSwaps', 'photos', 'checkins', 'repOverride', 'mealPhotos', 'coach', 'watch']) raw[k] = raw[k] || {};
   raw.inbox = raw.inbox || []; raw.shop = raw.shop || null;
   return raw;
 }
@@ -491,6 +491,7 @@ async function zeppPull() {
     for (const [d, v] of Object.entries(data)) {
       if (d === 'workouts') continue;
       const h = (S.health[d] = S.health[d] || {});
+      if (h.wd) continue; // الساعة مباشرة أدق
       if (v.steps != null) h.zsteps = v.steps;
       if (v.active != null) h.zactive = v.active;
       if (v.sleepMin != null) h.zsleep = v.sleepMin;
@@ -499,7 +500,7 @@ async function zeppPull() {
       if (Object.keys(sq).length) h.zsq = sq;
     }
     if (r.rawSleep) S.settings.zRawSleep = r.rawSleep.slice(0, 1500);
-    for (const [d, w] of Object.entries(data.workouts || {})) { const h = (S.health[d] = S.health[d] || {}); h.wkcal = w.kcal; h.wmin = w.min; }
+    for (const [d, w] of Object.entries(data.workouts || {})) { const h = (S.health[d] = S.health[d] || {}); if (h.wd) continue; h.wkcal = w.kcal; h.wmin = w.min; }
     save(); return true;
   } catch (e) { return false; }
 }
@@ -536,29 +537,131 @@ function zeppSetupSheet() {
 /* ================= الإشعارات ================= */
 let WD = null;
 try { if (native) WD = Cap.registerPlugin ? Cap.registerPlugin('WatchDirect') : Cap.Plugins.WatchDirect; } catch (e) { WD = null; }
-/* ================= تجربة الربط المباشر بالساعة ================= */
-function watchDirectSheet(res) {
-  const days = (res && res.days) || [];
-  openSheet(sheetHead('ربط الساعة مباشرة', 'تجريبي – من غير Zepp Active') + `
-    ${!res ? `<p style="line-height:1.8">التجربة دي بتكلم الساعة مباشرة وتقرا: <b>البطارية</b>، و<b>إصدار الساعة</b>، و<b>ملخص آخر 7 أيام</b> (خطوات، سعرات، نبض، نوم).</p>
-      <p class="muted small" style="line-height:1.8">بتقرا بس، ومبتغيّرش أي حاجة في الساعة. Zepp Active يفضل شغال عادي. لو طلب إذن "الأجهزة القريبة" وافق.</p>
-      <button class="btn red block mt" id="wdGo">ابدأ التجربة</button>`
-    : `<div class="verdict ${res.battery || days.length ? 'ok' : 'warn'}"><h3>${res.battery || days.length ? 'الساعة ردّت ✅' : 'الساعة مردّتش'}</h3><p>${esc(res.name || '')} · ${esc(res.why || '')}</p></div>
-      ${res.battery ? `<div class="hrow"><span class="v">البطارية</span><span class="d">${esc(res.battery)}</span></div>` : ''}
-      ${res.version ? `<div class="hrow"><span class="v">الإصدار</span><span class="d">${esc(res.version)}</span></div>` : ''}
-      ${days.length ? `<div class="section-t">من الساعة مباشرة</div><div class="card pad scroll-x"><table class="t"><thead><tr><th>اليوم</th><th>خطوات</th><th>سعرات</th><th>نبض</th><th>نوم عميق/خفيف</th></tr></thead><tbody>${days.map(d => `<tr><td class="num">${new Date(d.time * 1000).toLocaleDateString('ar-EG', { day: 'numeric', month: 'short' })}</td><td class="num">${fmt(d.steps)}</td><td class="num">${d.kcal}</td><td class="num">${d.avgHR}</td><td class="num">${d.deepMin}/${d.lightMin}</td></tr>`).join('')}</tbody></table></div>` : ''}
-      <p class="muted small mt">${ghOn() ? 'النتيجة اتبعتت للكابتن على المستودع الخاص ✓' : 'انسخ النتيجة وابعتها للكابتن.'}</p>
-      <div class="grid2 mt"><button class="btn ghost sm" id="wdCopy">انسخ السجل</button><button class="btn red sm" id="wdGo">جرّب تاني</button></div>`}`, p => {
-    $('#wdGo', p).onclick = async () => {
-      if (!WD) { toast('التجربة بتشتغل في تطبيق الأندرويد بس'); return; }
-      const b = $('#wdGo', p); b.disabled = true; b.textContent = 'بيكلم الساعة… (لحد 40 ثانية)';
-      try {
-        const r = await WD.test({});
-        if (ghOn()) { try { await ghPut(`debug/watch-${Date.now()}.json`, b64(JSON.stringify(r, null, 1)), 'watch direct test'); } catch (e) { } }
-        closeSheet(); watchDirectSheet(r);
-      } catch (e) { toast(String(e.message || e)); b.disabled = false; b.textContent = 'ابدأ التجربة'; }
+/* ================= الساعة مباشرة (من غير Zepp Active) ================= */
+const tISO = t => iso(new Date(t * 1000));
+const tHM = t => { const x = new Date(t * 1000); return `${pad2(x.getHours())}:${pad2(x.getMinutes())}`; };
+/* بنحط بيانات الساعة في نفس خانات Zepp (zsteps/zactive/zsleep/zsq) وبنعلّمها wd عشان قارئ الشاشة ميكتبش فوقها */
+function watchMerge(r) {
+  const W = (S.watch = S.watch || {});
+  W.at = Date.now(); W.name = r.name || W.name; W.mac = r.mac || W.mac;
+  if (r.battery != null) { W.battery = r.battery; W.charging = !!r.charging; }
+  if (r.version) W.version = r.version;
+  const H = d => (S.health[d] = S.health[d] || {});
+  if (r.today) {
+    const h = H(today()), t = r.today;
+    if (t.steps > 0 && t.steps < 1e5) h.zsteps = t.steps; // سجل الأيام تحت بيكتب فوقه لو موجود
+    if (t.kcal > 0 && t.kcal < 5000) h.zactive = t.kcal;
+    if (t.hr) h.zhr = t.hr;
+    h.wd = 1; W.today = Object.assign({ at: Date.now() }, t);
+  }
+  for (const x of r.days || []) {
+    if (!x.time) continue;
+    const d = tISO(x.time + 120), h = H(d); // السجل بيبدأ نص ليل نفس اليوم (أحياناً ±ثانية)
+    if (x.steps != null) h.zsteps = x.steps;
+    if (x.kcal != null) h.zactive = x.kcal;
+    if (x.avgHR) h.zhr = x.avgHR;
+    if (x.minHR) h.rhr = x.minHR;
+    if (x.spo2) h.spo2 = x.spo2;
+    if (x.stress) h.stress = x.stress;
+    h.wd = 1;
+  }
+  for (const sl of r.sleeps || []) {
+    if (!sl.end || sl.nap) continue;
+    const d = tISO(sl.end), h = H(d);
+    let awake = 0, deep = 0, light = 0, rem = 0;
+    for (const [k, m] of sl.stages || []) { if (k === 2) awake += m; else if (k === 0) deep += m; else if (k === 1) light += m; else if (k === 3) rem += m; }
+    if (!deep && !light) { deep = sl.deep || 0; light = sl.light || 0; rem = sl.rem || 0; }
+    const sq = Object.assign({}, h.zsq || {}, { deep, light, rem, awake, bed: tHM(sl.start), wake: tHM(sl.end) });
+    delete sq.score; // الساعة مش بتدّي سكور – الكابتن بيحسبه
+    h.zsq = sq; h.zsleep = deep + light + rem; h.wd = 1;
+    (W.stages = W.stages || {})[d] = (sl.stages || []).slice(0, 200);
+  }
+  if (r.hr && r.hr.length) W.hr = r.hr.slice(-600);
+  if (r.workouts) {
+    const by = {};
+    for (const w of r.workouts) { if (!w.begin) continue; const d = tISO(w.begin); (by[d] = by[d] || { kcal: 0, min: 0, list: [] }); by[d].kcal += w.kcal || 0; by[d].min += Math.round((w.sec || 0) / 60); by[d].list.push(w); }
+    for (const [d, v] of Object.entries(by)) { const h = H(d); h.wkcal = v.kcal; h.wmin = v.min; }
+    W.workouts = r.workouts.slice(-20);
+  }
+  if (W.stages) for (const d of Object.keys(W.stages)) if (d < addDays(today(), -10)) delete W.stages[d];
+  save();
+}
+let wdBusy = false;
+async function watchSync(manual) {
+  if (!WD || wdBusy) return false;
+  if (!manual && Date.now() - ((S.watch || {}).at || 0) < 45 * 60e3) return false;
+  wdBusy = true;
+  try {
+    const r = await WD.sync({ days: 7, hrDays: 2, log: !!manual });
+    watchMerge(r);
+    if (manual && ghOn() && S.settings.wdDebug) { try { await ghPut(`debug/watch-${Date.now()}.json`, b64(JSON.stringify(r, null, 1)), 'watch sync'); } catch (e) { } }
+    S.settings.wdLastLog = (r.log || '').slice(-3000); S.settings.wdFail = 0; save();
+    return true;
+  } catch (e) {
+    S.settings.wdFail = (S.settings.wdFail || 0) + 1; S.settings.wdLastErr = String(e.message || e); save();
+    if (manual) toast(String(e.message || e));
+    return false;
+  } finally { wdBusy = false; }
+}
+function hrSvg(hr) {
+  if (!hr || hr.length < 3) return '';
+  const now = Date.now() / 1000, from = now - 24 * 3600, pts = hr.filter(x => x[0] >= from);
+  if (pts.length < 3) return '';
+  const lo = Math.min(...pts.map(p => p[1])) - 5, hi = Math.max(...pts.map(p => p[1])) + 5, W = 320, Hh = 90;
+  const xy = p => `${((p[0] - from) / (now - from) * W).toFixed(1)},${(Hh - (p[1] - lo) / (hi - lo) * Hh).toFixed(1)}`;
+  return `<svg viewBox="0 0 ${W} ${Hh}" style="width:100%;height:90px;display:block"><polyline fill="none" stroke="#ff6a2b" stroke-width="1.6" stroke-linejoin="round" points="${pts.map(xy).join(' ')}"/></svg>
+    <div class="muted small" style="display:flex;justify-content:space-between"><span>من 24 ساعة</span><span>أقل ${Math.min(...pts.map(p => p[1]))} · أعلى ${Math.max(...pts.map(p => p[1]))}</span><span>دلوقتي</span></div>`;
+}
+function stagesBar(st) {
+  if (!st || !st.length) return '';
+  const col = { 0: '#5b2fa0', 1: '#a98be0', 2: '#ffb020', 3: '#3d9bff', 4: '#ccc' }, tot = st.reduce((a, x) => a + x[1], 0) || 1;
+  return `<div style="display:flex;height:22px;border-radius:8px;overflow:hidden;margin:8px 0">${st.map(([k, m]) => `<i style="flex:${m / tot};background:${col[k] || '#ddd'}"></i>`).join('')}</div>
+    <div class="muted small" style="display:flex;gap:10px;flex-wrap:wrap"><span style="color:#5b2fa0">■ عميق</span><span style="color:#a98be0">■ خفيف</span><span style="color:#3d9bff">■ أحلام</span><span style="color:#ffb020">■ صاحي</span></div>`;
+}
+const WD_SOON = [
+  ['🔔', 'إشعارات الموبايل على الساعة', 'واتساب والرسايل وأي تطبيق تختاره'],
+  ['📞', 'المكالمات باسم المتصل', 'الساعة تقرا الاسم من الأسماء اللي عندك'],
+  ['⭐', 'الأرقام المفضلة على الساعة', 'تختار أسماء تتحط في الساعة'],
+  ['⚙️', 'إعدادات الساعة', 'منبّه، تذكير الحركة والمية، عدم الإزعاج، رفع الإيد'],
+  ['⌚', 'شكل الساعة', 'تغيّر بين الأشكال اللي جوه الساعة، وبعدين صورة من عندك'],
+  ['🌤️', 'الطقس والمزيكا والكاميرا', '']
+];
+function watchDirectSheet() {
+  const W = S.watch || {}, t = W.today || {}, d0 = today(), h = S.health[d0] || {};
+  const lastNight = S.health[d0] && S.health[d0].zsq, st = (W.stages || {})[d0];
+  const ago = W.at ? Math.round((Date.now() - W.at) / 6e4) : null;
+  openSheet(sheetHead('الساعة', W.name ? esc(W.name) : 'Amazfit Pop 3R') + `
+    <div class="card pad" style="display:flex;align-items:center;gap:14px">
+      <div style="font-size:34px">⌚</div>
+      <div style="flex:1"><b>${W.battery != null ? `البطارية ${W.battery}%${W.charging ? ' ⚡' : ''}` : 'لسه مقريناش الساعة'}</b>
+        <div class="muted small">${ago == null ? 'اضغط مزامنة' : ago < 1 ? 'اتزامنت دلوقتي' : ago < 60 ? `آخر مزامنة من ${ago} دقيقة` : `آخر مزامنة ${new Date(W.at).toLocaleString('ar-EG', { weekday: 'short', hour: 'numeric', minute: '2-digit' })}`}</div></div>
+    </div>
+    <div class="grid2 mt"><button class="btn red sm" id="wdSync">مزامنة دلوقتي</button><button class="btn ghost sm" id="wdFind">دوّر على الساعة</button></div>
+    <div class="section-t">النهارده</div>
+    <div class="hrow"><span class="v">خطوات</span><span class="d num"><b>${fmt(h.zsteps)}</b> / 8,000</span></div>
+    <div class="hrow"><span class="v">سعرات الحركة</span><span class="d num">${fmt(h.zactive)}</span></div>
+    ${t.hr ? `<div class="hrow"><span class="v">النبض دلوقتي</span><span class="d num">${t.hr} ❤️</span></div>` : ''}
+    ${lastNight ? `<div class="section-t">نوم امبارح</div>
+      <div class="hrow"><span class="v">من ${esc(lastNight.bed || '—')} لـ ${esc(lastNight.wake || '—')}</span><span class="d num">${h.zsleep ? `${Math.floor(h.zsleep / 60)}:${pad2(h.zsleep % 60)} ساعة` : ''}</span></div>
+      ${stagesBar(st)}
+      <div class="hrow"><span class="v">عميق · خفيف · أحلام · صاحي</span><span class="d num">${lastNight.deep ?? '—'} · ${lastNight.light ?? '—'} · ${lastNight.rem ?? '—'} · ${lastNight.awake ?? '—'} د</span></div>` : ''}
+    ${hrSvg(W.hr) ? `<div class="section-t">النبض آخر 24 ساعة</div><div class="card pad">${hrSvg(W.hr)}</div>` : ''}
+    ${(W.workouts || []).length ? `<div class="section-t">تمارين سجّلتها الساعة</div>${W.workouts.slice(-5).reverse().map(w => `<div class="hrow"><span class="v">${new Date(w.begin * 1000).toLocaleDateString('ar-EG', { weekday: 'short', day: 'numeric', month: 'short' })} · ${Math.round((w.sec || 0) / 60)} د</span><span class="d num">${w.kcal || 0} سعر · نبض ${w.avgHR || '—'}</span></div>`).join('')}` : ''}
+    <div class="section-t">جاي في التحديثات الجاية</div>
+    ${WD_SOON.map(x => `<div class="hrow"><span class="v">${x[0]} ${x[1]}${x[2] ? `<small>${x[2]}</small>` : ''}</span><span class="d muted small">قريب</span></div>`).join('')}
+    <p class="muted small mt" style="line-height:1.8">التطبيق بيقرا من الساعة لوحده كل ما تفتحه (كل 45 دقيقة بالكتير). Zepp Active يفضل متسطّب دلوقتي لحد ما نخلّص الإشعارات والمكالمات.</p>
+    <button class="btn ghost block sm" id="wdLog">انسخ السجل (لو فيه مشكلة ابعتهولي)</button>`, p => {
+    $('#wdSync', p).onclick = async () => {
+      if (!WD) { toast('ده شغال في تطبيق الأندرويد بس'); return; }
+      const b = $('#wdSync', p); b.disabled = true; b.textContent = 'بيقرا الساعة…';
+      const ok = await watchSync(true);
+      if (ok) { toast('اتزامنت ✓'); closeSheet(); render(); watchDirectSheet(); } else { b.disabled = false; b.textContent = 'مزامنة دلوقتي'; }
     };
-    const cp = $('#wdCopy', p); if (cp) cp.onclick = () => copyText(JSON.stringify(res, null, 1));
+    $('#wdFind', p).onclick = async () => {
+      if (!WD) { toast('ده شغال في تطبيق الأندرويد بس'); return; }
+      try { await WD.find({ log: false }); toast('الساعة بتهزّ دلوقتي 📳'); } catch (e) { toast(String(e.message || e)); }
+    };
+    $('#wdLog', p).onclick = () => copyText(`ERR: ${S.settings.wdLastErr || ''}\n${S.settings.wdLastLog || ''}`);
   });
 }
 let LN = null;
@@ -1922,12 +2025,13 @@ function foodSwapSheet(id) {
 function renderMenu(el) {
   const rows = [
     ['user', 'ملفي وأهدافي', profileSheet, `${S.settings.kcal} سعر`],
-    ['heart', 'الساعة والميزان', zeppSetupSheet, native ? (zeppState.enabled ? '✓ شغالة' : 'مش شغالة') : ''],
+    ['heart', 'الساعة', () => watchDirectSheet(), (S.watch || {}).battery != null ? `🔋 ${S.watch.battery}%` : ''],
+    ['heart', 'الميزان وZepp Active', zeppSetupSheet, native ? (zeppState.enabled ? '✓ شغالة' : 'مش شغالة') : ''],
     ['save', 'المزامنة مع Google Drive', cloudSheet, cloudInfo.linked ? '✓ مربوط' : 'مش مربوط'],
     ['bell', 'الإشعارات', notifSheet, S.settings.notif ? 'شغالة' : 'مقفولة'],
     ['shield', 'الكابتن (المراجعة اليومية)', () => (ghOn() && (S.coach.msgs || []).length ? coachMsgsSheet() : ghSheet()), ghOn() ? (S.settings.ghLast ? '✓ شغالة' : 'مستنية') : 'مش متفعّلة'],
     ['report', 'قول للكابتن', sayCoachSheet, ''],
-    ['heart', 'ربط الساعة مباشرة (تجريبي)', () => watchDirectSheet(), ''],
+    
     ['heart', 'مكان الجيم', gymSheet, S.settings.gym ? '✓' : ''],
     ['shield', 'قواعد الكابتن والمصادر', rulesSheet, ''],
     ['report', 'أدوات تانية', moreSheet, '']
@@ -2017,6 +2121,7 @@ if (Zepp) cloudPullIfNewer().then(() => { if (!cloudInfo.linked && !S.settings.c
 if (LN) setupNotifActions();
 if (ghOn()) setTimeout(() => ghSync(), 2500);
 setTimeout(gymCheck, 3000);
+if (WD) setTimeout(() => watchSync(false).then(ok => { if (ok && $('#player').hidden && $('#sheet').hidden) render(); }), 1500);
 if (LN) (async () => {
   try { if (S.settings.notif && !S.settings.notifAsked) { S.settings.notifAsked = true; save(); await LN.requestPermissions(); } } catch (e) { }
   scheduleReminders();
@@ -2026,6 +2131,7 @@ document.addEventListener('visibilitychange', () => {
   if (!P) cloudPullIfNewer();
   if (!P && ghOn() && Date.now() - (S.settings.ghLast || 0) > 30 * 60e3) ghSync();
   if (!P) setTimeout(gymCheck, 800);
+  if (WD && !P) setTimeout(() => watchSync(false).then(ok => { if (ok && $('#player').hidden && $('#sheet').hidden) render(); }), 1200);
   if (P) { tickPlayer(); keepAwake(true); }
   if (Zepp && !P) zeppPull().then(async () => {
     if ($('#player').hidden) render();
