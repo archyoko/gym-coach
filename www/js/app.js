@@ -984,7 +984,9 @@ function dataTab() {
     ${WD ? `<div class="section-t">تجربة: دوّر على شاشة التمرين</div>
     <p class="muted small" style="line-height:1.8">كل ضغطة بتنقل الساعة لشاشة. اضغط، بص على الساعة، وقولّي الرقم اللي فتح قايمة التمرين أو "ممارسة التمارين الرياضية".</p>
     <div id="spMsg" class="muted small mt" style="font-weight:600"></div>
-    <div class="grid2 mt"><button class="btn ghost sm" id="spPrev">⟵ قبل</button><button class="btn red sm" id="spNext">الشاشة اللي بعدها ⟶</button></div>
+    <div class="grid2 mt"><input id="spInp" class="inp num" inputmode="numeric" placeholder="رقم" value="${jmpN}"><button class="btn red sm" id="spGoN">روح للرقم ده</button></div>
+    <div class="grid2 mt"><button class="btn ghost sm" id="spPrev">⟵ قبل</button><button class="btn ghost sm" id="spNext">اللي بعده ⟶</button></div>
+    <p class="muted small mt">لقينا: 53 = مشي. دوّر في 50–60 على "ممارسة التمارين الرياضية".</p>
     <button class="btn ghost block mt sm" id="spStop">أقفل التمرين على الساعة</button>` : ''}
     <p class="muted small mt" style="line-height:1.8">التطبيق بيقرا من الساعة لوحده كل ما تفتحه (كل 45 دقيقة بالكتير).</p>`;
 }
@@ -1123,8 +1125,9 @@ function watchPage() {
     };
     const fd = $('#wdFind', p); if (fd) fd.onclick = async () => { try { await WD.find({ log: false }); toast('الساعة بتهزّ دلوقتي 📳'); } catch (e) { toast(String(e.message || e)); } };
     const spMsg = () => $('#spMsg', p);
-    const spN = $('#spNext', p); if (spN) spN.onclick = async () => { await jmpTry(jmpN, t => { if (spMsg()) spMsg().textContent = t; }); jmpN++; };
-    const spP = $('#spPrev', p); if (spP) spP.onclick = async () => { jmpN = Math.max(0, jmpN - 1); await jmpTry(jmpN, t => { if (spMsg()) spMsg().textContent = t; }); };
+    const spN = $('#spNext', p); if (spN) spN.onclick = async () => { await jmpTry(jmpN, t => { if (spMsg()) spMsg().textContent = t; }); jmpN++; const inp = $('#spInp', p); if (inp) inp.value = jmpN; };
+    const spP = $('#spPrev', p); if (spP) spP.onclick = async () => { jmpN = Math.max(0, jmpN - 1); const inp = $('#spInp', p); if (inp) inp.value = jmpN; await jmpTry(jmpN, t => { if (spMsg()) spMsg().textContent = t; }); };
+    const spGn = $('#spGoN', p); if (spGn) spGn.onclick = async () => { const inp = $('#spInp', p); jmpN = Math.max(0, parseInt(inp.value) || 0); await jmpTry(jmpN, t => { if (spMsg()) spMsg().textContent = t; }); };
     const sp = $('#spStop', p); if (sp) sp.onclick = () => sportStop();
     const lg = $('#wdLog', p); if (lg) lg.onclick = async () => { let l = ''; try { l = (await WD.getLog()).log; } catch (e) { } copyText(`ERR: ${S.settings.wdLastErr || ''}\nCFG: ${JSON.stringify(wCfg && Object.fromEntries(Object.entries(wCfg).map(([k, v]) => [k, v && b2hx(v.raw)])))}\n${S.settings.wdLastLog || ''}\n--- link ---\n${l}`); };
     // الإشعارات
