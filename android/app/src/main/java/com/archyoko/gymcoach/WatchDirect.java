@@ -30,7 +30,6 @@ import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayDeque;
 import java.util.Calendar;
-import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -123,14 +122,30 @@ public class WatchDirect extends Plugin {
         BluetoothDevice dev = null;
         String mac = call.getString("mac");
         if (mac != null && !mac.isEmpty()) dev = ad.getRemoteDevice(mac);
+        StringBuilder seen = new StringBuilder();
+        // ١) الساعة متوصلة دلوقتي بـ Zepp Active (BLE)
         if (dev == null) {
-            Set<BluetoothDevice> bonded = ad.getBondedDevices();
-            for (BluetoothDevice d : bonded) {
-                String n = d.getName();
-                if (n != null && (n.toLowerCase().contains("pop 3") || n.toLowerCase().contains("amazfit"))) { dev = d; break; }
-            }
+            try {
+                for (BluetoothDevice d : bm.getConnectedDevices(BluetoothProfile.GATT)) {
+                    String n = d.getName();
+                    seen.append("gatt:").append(n).append('/').append(d.getAddress()).append(' ');
+                    if (n == null || n.toLowerCase().contains("pop") || n.toLowerCase().contains("amazfit") || d.getAddress().toUpperCase().startsWith("23:08:17")) { dev = d; break; }
+                }
+            } catch (Exception e) { seen.append("gattErr:").append(e.getMessage()).append(' '); }
         }
-        if (dev == null) { call.reject("ملقتش الساعة في الأجهزة المقترنة"); return; }
+        // ٢) الأجهزة المقترنة
+        if (dev == null) {
+            try {
+                for (BluetoothDevice d : ad.getBondedDevices()) {
+                    String n = d.getName();
+                    seen.append("bond:").append(n).append('/').append(d.getAddress()).append(' ');
+                    if ((n != null && (n.toLowerCase().contains("pop") || n.toLowerCase().contains("amazfit"))) || d.getAddress().toUpperCase().startsWith("23:08:17")) { dev = d; break; }
+                }
+            } catch (Exception e) { seen.append("bondErr:").append(e.getMessage()).append(' '); }
+        }
+        // ٣) العنوان المعروف من سجل Zepp Active
+        if (dev == null) { dev = ad.getRemoteDevice("23:08:17:10:21:D2"); seen.append("fallback-mac"); }
+        L("found: " + seen);
         pending = call;
         result.put("name", dev.getName());
         result.put("mac", dev.getAddress());
