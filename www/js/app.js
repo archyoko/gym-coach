@@ -534,6 +534,33 @@ function zeppSetupSheet() {
 }
 
 /* ================= الإشعارات ================= */
+let WD = null;
+try { if (native) WD = Cap.registerPlugin ? Cap.registerPlugin('WatchDirect') : Cap.Plugins.WatchDirect; } catch (e) { WD = null; }
+/* ================= تجربة الربط المباشر بالساعة ================= */
+function watchDirectSheet(res) {
+  const days = (res && res.days) || [];
+  openSheet(sheetHead('ربط الساعة مباشرة', 'تجريبي – من غير Zepp Active') + `
+    ${!res ? `<p style="line-height:1.8">التجربة دي بتكلم الساعة مباشرة وتقرا: <b>البطارية</b>، و<b>إصدار الساعة</b>، و<b>ملخص آخر 7 أيام</b> (خطوات، سعرات، نبض، نوم).</p>
+      <p class="muted small" style="line-height:1.8">بتقرا بس، ومبتغيّرش أي حاجة في الساعة. Zepp Active يفضل شغال عادي. لو طلب إذن "الأجهزة القريبة" وافق.</p>
+      <button class="btn red block mt" id="wdGo">ابدأ التجربة</button>`
+    : `<div class="verdict ${res.battery || days.length ? 'ok' : 'warn'}"><h3>${res.battery || days.length ? 'الساعة ردّت ✅' : 'الساعة مردّتش'}</h3><p>${esc(res.name || '')} · ${esc(res.why || '')}</p></div>
+      ${res.battery ? `<div class="hrow"><span class="v">البطارية</span><span class="d">${esc(res.battery)}</span></div>` : ''}
+      ${res.version ? `<div class="hrow"><span class="v">الإصدار</span><span class="d">${esc(res.version)}</span></div>` : ''}
+      ${days.length ? `<div class="section-t">من الساعة مباشرة</div><div class="card pad scroll-x"><table class="t"><thead><tr><th>اليوم</th><th>خطوات</th><th>سعرات</th><th>نبض</th><th>نوم عميق/خفيف</th></tr></thead><tbody>${days.map(d => `<tr><td class="num">${new Date(d.time * 1000).toLocaleDateString('ar-EG', { day: 'numeric', month: 'short' })}</td><td class="num">${fmt(d.steps)}</td><td class="num">${d.kcal}</td><td class="num">${d.avgHR}</td><td class="num">${d.deepMin}/${d.lightMin}</td></tr>`).join('')}</tbody></table></div>` : ''}
+      <p class="muted small mt">${ghOn() ? 'النتيجة اتبعتت للكابتن على المستودع الخاص ✓' : 'انسخ النتيجة وابعتها للكابتن.'}</p>
+      <div class="grid2 mt"><button class="btn ghost sm" id="wdCopy">انسخ السجل</button><button class="btn red sm" id="wdGo">جرّب تاني</button></div>`}`, p => {
+    $('#wdGo', p).onclick = async () => {
+      if (!WD) { toast('التجربة بتشتغل في تطبيق الأندرويد بس'); return; }
+      const b = $('#wdGo', p); b.disabled = true; b.textContent = 'بيكلم الساعة… (لحد 40 ثانية)';
+      try {
+        const r = await WD.test({});
+        if (ghOn()) { try { await ghPut(`debug/watch-${Date.now()}.json`, b64(JSON.stringify(r, null, 1)), 'watch direct test'); } catch (e) { } }
+        closeSheet(); watchDirectSheet(r);
+      } catch (e) { toast(String(e.message || e)); b.disabled = false; b.textContent = 'ابدأ التجربة'; }
+    };
+    const cp = $('#wdCopy', p); if (cp) cp.onclick = () => copyText(JSON.stringify(res, null, 1));
+  });
+}
 let LN = null;
 try { if (native) LN = Cap.registerPlugin ? Cap.registerPlugin('LocalNotifications') : Cap.Plugins.LocalNotifications; } catch (e) { LN = null; }
 const REST_ID = 9001;
@@ -1900,6 +1927,7 @@ function renderMenu(el) {
     ['bell', 'الإشعارات', notifSheet, S.settings.notif ? 'شغالة' : 'مقفولة'],
     ['shield', 'الكابتن (المراجعة اليومية)', () => (ghOn() && (S.coach.msgs || []).length ? coachMsgsSheet() : ghSheet()), ghOn() ? (S.settings.ghLast ? '✓ شغالة' : 'مستنية') : 'مش متفعّلة'],
     ['report', 'قول للكابتن', sayCoachSheet, ''],
+    ['heart', 'ربط الساعة مباشرة (تجريبي)', () => watchDirectSheet(), ''],
     ['heart', 'مكان الجيم', gymSheet, S.settings.gym ? '✓' : ''],
     ['shield', 'قواعد الكابتن والمصادر', rulesSheet, ''],
     ['report', 'أدوات تانية', moreSheet, '']
