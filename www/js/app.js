@@ -959,15 +959,6 @@ function settingsTab() {
     <button class="btn ghost block sm mt" id="fwGo">🔬 جيب ملف نظام الساعة (فحص بس)</button>
     <p class="muted small" style="line-height:1.8;margin-top:6px">بيجيب الملف من سيرفر الشركة ويبعته للكابتن يفحصه. مش بيركّب ولا بيغيّر أي حاجة في الساعة.</p>`;
 }
-/* تجربة: فتح وضع التمرين بالتنقل بين شاشات الساعة (JMP) – واحدة واحدة */
-let jmpN = 0;
-async function jmpTry(n, status) {
-  if (!WD) { toast('ده شغال في الأندرويد بس'); return; }
-  try { await WD.atRaw({ cmd: 'JMP:' + n }); status(`دلوقتي بعت شاشة رقم ${n} — بص على الساعة: إيه اللي ظهر؟`); }
-  catch (e) { status('مشكلة: ' + (e.message || e)); }
-}
-async function sportStop() { if (WD) { for (const c of ['ESS:8,3,0', 'ESS:13,3,0']) { try { await WD.atRaw({ cmd: c }); } catch (e) { } } toast('بعت أمر الإقفال'); } }
-
 function dataTab() {
   const W = S.watch || {}, t = W.today || {}, d0 = today(), h = S.health[d0] || {};
   const lastNight = h.zsq, stg = (W.stages || {})[d0];
@@ -981,13 +972,6 @@ function dataTab() {
       <p class="small" style="margin:6px 0 0;line-height:1.9">عميق <b>${lastNight.deep ?? '—'}</b> د · خفيف <b>${lastNight.light ?? '—'}</b> د · أحلام <b>${lastNight.rem ?? '—'}</b> د · صاحي <b>${lastNight.awake ?? '—'}</b> د</p>` : ''}
     ${hrSvg(W.hr) ? `<div class="section-t">النبض آخر 24 ساعة</div><div class="card pad">${hrSvg(W.hr)}</div>` : ''}
     ${(W.workouts || []).length ? `<div class="section-t">تمارين سجّلتها الساعة</div>${W.workouts.slice(-5).reverse().map(w => `<div class="hrow"><span class="v">${new Date(w.begin * 1000).toLocaleDateString('ar-EG', { weekday: 'short', day: 'numeric', month: 'short' })} · ${Math.round((w.sec || 0) / 60)} د</span><span class="d num">${w.kcal || 0} سعر · نبض ${w.avgHR || '—'}</span></div>`).join('')}` : ''}
-    ${WD ? `<div class="section-t">تجربة: دوّر على شاشة التمرين</div>
-    <p class="muted small" style="line-height:1.8">كل ضغطة بتنقل الساعة لشاشة. اضغط، بص على الساعة، وقولّي الرقم اللي فتح قايمة التمرين أو "ممارسة التمارين الرياضية".</p>
-    <div id="spMsg" class="muted small mt" style="font-weight:600"></div>
-    <div class="grid2 mt"><input id="spInp" class="inp num" inputmode="numeric" placeholder="رقم" value="${jmpN}"><button class="btn red sm" id="spGoN">روح للرقم ده</button></div>
-    <div class="grid2 mt"><button class="btn ghost sm" id="spPrev">⟵ قبل</button><button class="btn ghost sm" id="spNext">اللي بعده ⟶</button></div>
-    <p class="muted small mt">لقينا: 53 = مشي. دوّر في 50–60 على "ممارسة التمارين الرياضية".</p>
-    <button class="btn ghost block mt sm" id="spStop">أقفل التمرين على الساعة</button>` : ''}
     <p class="muted small mt" style="line-height:1.8">التطبيق بيقرا من الساعة لوحده كل ما تفتحه (كل 45 دقيقة بالكتير).</p>`;
 }
 function notifTab(st) {
@@ -1124,11 +1108,6 @@ function watchPage() {
       if (ok) { toast('اتزامنت ✓'); closeSheet(); render(); watchDirectSheet(); } else { b.disabled = false; b.textContent = 'مزامنة'; }
     };
     const fd = $('#wdFind', p); if (fd) fd.onclick = async () => { try { await WD.find({ log: false }); toast('الساعة بتهزّ دلوقتي 📳'); } catch (e) { toast(String(e.message || e)); } };
-    const spMsg = () => $('#spMsg', p);
-    const spN = $('#spNext', p); if (spN) spN.onclick = async () => { await jmpTry(jmpN, t => { if (spMsg()) spMsg().textContent = t; }); jmpN++; const inp = $('#spInp', p); if (inp) inp.value = jmpN; };
-    const spP = $('#spPrev', p); if (spP) spP.onclick = async () => { jmpN = Math.max(0, jmpN - 1); const inp = $('#spInp', p); if (inp) inp.value = jmpN; await jmpTry(jmpN, t => { if (spMsg()) spMsg().textContent = t; }); };
-    const spGn = $('#spGoN', p); if (spGn) spGn.onclick = async () => { const inp = $('#spInp', p); jmpN = Math.max(0, parseInt(inp.value) || 0); await jmpTry(jmpN, t => { if (spMsg()) spMsg().textContent = t; }); };
-    const sp = $('#spStop', p); if (sp) sp.onclick = () => sportStop();
     const lg = $('#wdLog', p); if (lg) lg.onclick = async () => { let l = ''; try { l = (await WD.getLog()).log; } catch (e) { } copyText(`ERR: ${S.settings.wdLastErr || ''}\nCFG: ${JSON.stringify(wCfg && Object.fromEntries(Object.entries(wCfg).map(([k, v]) => [k, v && b2hx(v.raw)])))}\n${S.settings.wdLastLog || ''}\n--- link ---\n${l}`); };
     // الإشعارات
     const acc = $('#fwAcc', p); if (acc) acc.onclick = () => WD.openNotifAccess();
