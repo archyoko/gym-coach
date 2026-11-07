@@ -518,3 +518,23 @@ button, .btn { line-height: 1.35; }
 .wtog.on { background: var(--red); color: #fff; border-color: var(--red); }
 [data-ws] label { display: block; color: var(--ink2); }
 [data-ws] .inp { height: 44px; font-size: 16px; margin-top: 4px; padding: 0 12px; }
+/* اسأل الكابتن */
+.askbtn { display:flex; align-items:center; gap:12px; width:100%; margin-top:12px; padding:14px 16px; border:0; border-radius:var(--r-card); background:linear-gradient(100deg,var(--red),var(--red-deep)); color:#fff; text-align:start; }
+.askbtn .ai { font-size:26px; background:rgba(255,255,255,.2); width:46px; height:46px; display:flex; align-items:center; justify-content:center; border-radius:14px; flex:0 0 auto; }
+.askbtn .t { flex:1 }
+.askbtn .t b { display:block; font-size:16px }
+.askbtn .t small { display:block; opacity:.9; font-size:12px; margin-top:2px }
+.askbtn .ar { opacity:.9 }
+.askbtn svg { width:20px; height:20px; stroke:#fff }
+.cchips { display:flex; gap:8px; overflow-x:auto; padding:4px 0 10px; margin:0 -4px; }
+.cchips .chip { flex:0 0 auto; white-space:nowrap; }
+.cthread { max-height:46vh; overflow-y:auto; display:flex; flex-direction:column; gap:10px; padding:6px 2px; }
+.cbub { max-width:85%; padding:11px 14px; border-radius:16px; line-height:1.75; font-size:15px; }
+.cbub.q { align-self:flex-start; background:var(--red); color:#fff; border-bottom-right-radius:5px; }
+.cbub.a { align-self:flex-end; background:var(--ground); border:1px solid var(--line); border-bottom-left-radius:5px; }
+.cact { display:block; margin-top:9px; padding:8px 12px; border:1px solid var(--red); color:var(--red); background:#fff; border-radius:12px; font-weight:600; font-size:13px; }
+.csent { margin-top:8px; color:var(--ok); font-size:12px; font-weight:600; }
+.cinput { display:flex; gap:8px; align-items:center; margin-top:12px; position:sticky; bottom:0; background:var(--bg); padding-top:8px; }
+.cinput .inp { flex:1; height:48px; margin:0; }
+.cinput .btn { width:48px; height:48px; flex:0 0 auto; padding:0; display:flex; align-items:center; justify-content:center; }
+.cinput .btn svg { transform:scaleX(-1) }

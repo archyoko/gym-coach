@@ -184,6 +184,110 @@ function nextDay() {
   return DAYS[0];
 }
 const sessKey = (w, k) => `${w}-${k}`;
+/* ================= الكابتن السريع: رد لحظي من بياناتك (من غير إنترنت) ================= */
+const qNorm = s => (s || '').replace(/[ً-ْٰـ]/g, '').replace(/[أإآ]/g, 'ا').replace(/ى/g, 'ي').replace(/ة/g, 'ه').replace(/ؤ/g, 'و').replace(/ئ/g, 'ي').replace(/[؟?.!،,]/g, ' ').replace(/\s+/g, ' ').trim();
+const qHas = (s, arr) => arr.some(w => s.includes(w));
+function foodNums(d) {
+  const ms = mealsFor(d), eaten = (S.days[d] || {}).meals || {};
+  const planK = kcalTarget(d), planP = ms.reduce((a, m) => a + m.p, 0);
+  const eatenK = ms.reduce((a, m) => a + (eaten[m.id] ? m.kcal : 0), 0) + extraOf(d);
+  const eatenP = ms.reduce((a, m) => a + (eaten[m.id] ? m.p : 0), 0);
+  const left = ms.filter(m => !eaten[m.id]);
+  return { ms, eaten, planK, planP, eatenK, eatenP, left, any: Object.values(eaten).some(Boolean) };
+}
+/* بيرجّع {text, chips?, open?} أو null لو محتاج رأي الكابتن */
+function coachAsk(raw) {
+  const q = qNorm(raw), d = today(), f = foodNums(d);
+  const leftMeals = () => f.left.length ? 'الباقي النهارده: ' + f.left.map(m => `${m.title.replace('وجبة ', '')} (${m.kcal} سعر · ${m.p} بروتين)`).join('، ') + '.' : 'خلّصت وجبات النهارده كلها.';
+  // 1) سعرات فاضلة
+  if (qHas(q, ['فاضل', 'باقي', 'متبقي', 'كام سعر', 'سعرات فاضي', 'اكل كام', 'اكلت كام', 'باقي قد ايه', 'فاضي قد'])) {
+    if (!f.any) return { text: `لسه معلّمتش على أي وجبة النهارده. خطتك ${fmt(f.planK)} سعر و${f.planP} جم بروتين.\n${leftMeals()}\nعلّم على كل وجبة بعد ما تاكلها عشان أحسبلك بالظبط.` };
+    const rem = f.planK - f.eatenK;
+    return { text: `أكلت ${fmt(f.eatenK)} سعر من أصل ${fmt(f.planK)}.\n${rem > 0 ? `فاضلك ${fmt(rem)} سعر` : rem < -50 ? `عدّيت بـ ${fmt(-rem)} سعر` : 'خلّصت ميزانيتك بالظبط 👏'}.\nالبروتين: ${f.eatenP} من ${f.planP} جم${f.planP - f.eatenP > 0 ? ` (فاضل ${f.planP - f.eatenP})` : ' ✓'}.\n${leftMeals()}` };
+  }
+  // 2) بروتين
+  if (qHas(q, ['بروتين', 'protein'])) {
+    const pSrc = f.left.filter(m => m.p >= 20).map(m => `${m.title.replace('وجبة ', '')} (${m.p} جم)`);
+    return { text: f.any
+      ? `أكلت ${f.eatenP} جم بروتين من هدف ${f.planP}.\n${f.planP - f.eatenP > 0 ? `فاضلك ${f.planP - f.eatenP} جم${pSrc.length ? ` — هتلاقيهم في: ${pSrc.join('، ')}.` : '.'}` : 'وصلت للهدف 👏'}`
+      : `هدفك ${f.planP} جم بروتين في اليوم (حوالي 1.9 جم لكل كيلو — ممتاز للـ recomposition).\nأكبر مصادرك: الفراخ في العشا، الزبادي اليوناني، والبيض في الفطار. علّم على وجباتك وأقولك وصلت كام.` };
+  }
+  // 3) الوزن / التقدّم
+  if (qHas(q, ['وزني', 'وزن', 'نزلت', 'تخن', 'خسيت', 'تقل', 'نحف', 'ماشي صح', 'ماشي كويس', 'شغال صح'])) {
+    const a = adaptive();
+    if (!a) { const w = latestWeight(d); return { text: `وزنك الحالي حوالي ${fmt(w, 1)} كجم، والهدف ${S.settings.target}.\nلسه بدري أحكم على السرعة — محتاج ~10 أيام وزن متتابعة. اتوزن كل صبح على الريق بعد الحمام، وأول ما يتجمّع متوسط أقولك السعرات مظبوطة ولا لأ.` }; }
+    const wk = a.slopeWk;
+    const verdict = wk > -0.2 ? `الوزن تقريباً واقف (${fmt(wk, 2)} كجم/أسبوع). لو فضل كده أسبوع تاني هنقلّل 150 سعر.`
+      : wk < -0.9 ? `بتنزل بسرعة (${fmt(-wk, 2)} كجم/أسبوع) — ده ممكن ياكل من العضل. هنزوّد رز شوية.`
+      : `بتنزل ${fmt(-wk, 2)} كجم في الأسبوع — ده بالظبط النطاق المثالي 👏 كمّل زي ما إنت.`;
+    return { text: `${verdict}\nحرقك التقديري ${fmt(a.tdee)} سعر، وبتاكل متوسط ${fmt(a.intakeAvg)}.\nدقة الحساب: ${a.conf} (${a.logged} يوم متعلّم).${a.sleepHold ? '\n⚠️ نومك قليل الأسبوع ده — مش هقلّل سعرات قبل ما نصلّح النوم.' : ''}` };
+  }
+  // 4) المية
+  if (qHas(q, ['ميه', 'مياه', 'مايه', 'اشرب', 'شربت', 'water'])) {
+    const w = eff(d).water || 0;
+    return { text: `هدفك ${S.settings.water} لتر مية في اليوم.\n${w ? `سجّلت ${fmt(w, 2)} لتر — فاضلك ${fmt(Math.max(0, S.settings.water - w), 2)}.` : 'لسه مسجّلتش حاجة النهارده.'}\nيوم التمرين: مشروب التمرين بيتشرب بدل المية في الجيم، محسوب من ضمنها.` };
+  }
+  // 5) الخطوات
+  if (qHas(q, ['خطوات', 'مشي', 'مشيت', 'steps', 'خطوه'])) {
+    const st = eff(d).steps;
+    return { text: st != null ? `خطواتك النهارده ${fmt(st)} من هدف ${fmt(S.settings.steps)}.\n${st >= S.settings.steps ? 'عاش 👏' : `فاضلك ${fmt(S.settings.steps - st)} — نزلة 15 دقيقة بعد العشا بتجيب ~2,000.`}` : `هدفك ${fmt(S.settings.steps)} خطوة. الساعة بتسجّلهم لوحدها — افتح صفحة الساعة وزامن.` };
+  }
+  // 6) المشروب / الكرياتين
+  if (qHas(q, ['كرياتين', 'creatine'])) return { text: `الكرياتين 5 جم كل يوم، حتى في الراحة. أيام التمرين موجود جوه مشروب التمرين، وأيام الراحة خده مع أي وجبة. الميعاد مش فارق، المهم تاخده يومياً.` };
+  if (qHas(q, ['المشروب', 'مشروب التمرين', 'pre workout', 'بري ورك'])) return { text: `مشروب التمرين (أيام التمرين بس) بيتشرب بدل المية في الجيم: 600 مل مية + 150 مل عصير برتقال + 7 جم عسل + نص لمونة + ربع معلقة ملح + 5 جم كرياتين. حوالي 93 سعر، من غير كافيين عشان النوم. قهوة الساعة 4 هي الـ pre بتاعك.` };
+  // 7) نوم
+  if (qHas(q, ['نمت وحش', 'نمت قليل', 'مش نايم', 'تعبان', 'نومي وحش', 'صاحي', 'قلقان'])) {
+    const sq = sleepQ(addDays(d, 0)) || sleepQ(addDays(d, -1)); const tips = sleepTips(sq);
+    return { text: `${sq ? `نومك ${sq.score}/100. ` : ''}النهارده الجوع هيبقى أعلى شوية — خليك على البروتين كامل وزوّد خضار وسلطة (سعراتها قليلة) بدل ما تاكل زيادة.\n${tips.length ? 'نصيحة: ' + tips[0] : 'نام بدري النهارده نص ساعة، والموبايل بره السرير.'}` };
+  }
+  // 8) جعان
+  if (qHas(q, ['جعان', 'جوعان', 'جايعان', 'بموت من الجوع', 'نفسي اكل'])) {
+    return { text: `اشرب كوباية مية الأول — ساعات العطش بيتحسّ جوع.\nلو فيه وجبة بروتين لسه مأكلتهاش، قدّمها — البروتين بيشبّع أكتر.\nلو لسه جعان بعد نص ساعة: خضار وسلطة وخيار على مزاجك، سعراتها شبه صفر ومش هتبوّظ اليوم.` };
+  }
+  // 9) عايز آكل حاجة / أغش
+  if (qHas(q, ['عايز اكل', 'نفسي في', 'ممكن اكل', 'اكل بره', 'اغش', 'cheat', 'عزومه', 'ممكن احط', 'ينفع اكل', 'اكل ايه', 'حاسس اني عايز'])) {
+    const r = allRecipes().find(x => { const nm = qNorm(x.name); return q.includes(nm) || nm.split(' ').some(w => w.length > 2 && q.includes(w)); });
+    if (r) return { text: `تمام 👌 عندي وصفة دايت لـ "${r.name}" مظبوطة على سعرات وجبتك، تاكلها من غير ما تخرج عن اليوم. افتحها؟`, open: { recipe: r.id } };
+    return { text: `ماشي. أي أكلة تقدر تدخل لو مظبطناها:\n• الأحسن: بدّل بيها وجبة قريبة في السعرات (دوس "وصفات" واختار).\n• أو سجّلها "أكل زيادة" وأنا أعدّل باقي اليوم.\nلو قولتلي اسمها بالظبط، أدوّرلك على نسخة دايت.`, chips: ['📖 الوصفات', '➕ أكل زيادة'] };
+  }
+  // 10) شكر / سلام
+  if (qHas(q, ['شكرا', 'تسلم', 'ميرسي', 'thanks', 'الله ينور', 'جامد', 'تمام كده'])) return { text: 'العفو يا بطل 💪 أنا هنا، اسألني أي وقت.' };
+  if (qHas(q, ['سلام', 'ازيك', 'صباح', 'مساء', 'اهلا', 'هاي']) && q.length < 25) return { text: 'أهلاً يا محمد 💪 اسألني عن سعراتك، بروتينك، وزنك، أو أي أكلة نفسك فيها.' };
+  return null;
+}
+/* ================= اسأل الكابتن (شات لحظي) ================= */
+const CHAT_CHIPS = ['كام سعر فاضل النهارده؟', 'البروتين كفاية؟', 'وزني ماشي صح؟', 'نفسي في أكلة؟', 'جعان أعمل إيه؟'];
+function chatPush(role, text, extra) { S.coachChat = (S.coachChat || []).concat([Object.assign({ role, text, t: Date.now() }, extra || {})]).slice(-40); save(); }
+function coachChatSheet(prefill) {
+  const thread = S.coachChat || [];
+  const bubbles = thread.map((m, i) => m.role === 'q'
+    ? `<div class="cbub q">${esc(m.text)}</div>`
+    : `<div class="cbub a">${esc(m.text).replace(/\n/g, '<br>')}${m.open ? `<button class="cact" data-copen="${esc(m.open.recipe)}">افتح الوصفة ←</button>` : ''}${m.needCoach && !m.sentC ? `<button class="cact" data-csend="${i}">📨 ابعتها للكابتن يرد في المراجعة</button>` : ''}${m.sentC ? '<div class="csent">✓ اتبعت للكابتن — هيرد في مراجعة الصبح</div>' : ''}</div>`).join('');
+  openSheet(sheetHead('اسأل الكابتن', 'رد لحظي من بياناتك') + `
+    <div class="cchips">${CHAT_CHIPS.map(c => `<button class="chip" data-cq="${esc(c)}">${esc(c)}</button>`).join('')}</div>
+    <div class="cthread" id="cTh">${thread.length ? bubbles : '<p class="muted small" style="text-align:center;padding:20px 0;line-height:1.9">اسألني عن سعراتك، بروتينك، وزنك، المية، الخطوات، أو أكلة نفسك فيها.<br>بردّ على طول من بياناتك.</p>'}</div>
+    <div class="cinput"><input id="cQ" class="inp" placeholder="اكتب سؤالك…" value="${esc(prefill || '')}"><button class="btn red" id="cGo" aria-label="ابعت">${ICON.arrowL || '←'}</button></div>`, p => {
+    const scroll = () => { const th = $('#cTh', p); if (th) th.scrollTop = th.scrollHeight; };
+    scroll();
+    const ask = text => {
+      text = (text || '').trim(); if (!text) return;
+      chatPush('q', text);
+      const r = coachAsk(text);
+      if (r) chatPush('a', r.text, { open: r.open || null });
+      else chatPush('a', 'ده سؤال محتاج رأيي الشخصي — مش حاجة أقدر أحسبها لوحدي. تحب أبعتهولك وأرد عليه في مراجعة الصبح؟', { needCoach: true, q: text });
+      coachChatSheet();
+    };
+    $('#cGo', p).onclick = () => ask($('#cQ', p).value);
+    $('#cQ', p).onkeydown = e => { if (e.key === 'Enter') ask($('#cQ', p).value); };
+    p.querySelectorAll('[data-cq]').forEach(b => b.onclick = () => ask(b.dataset.cq));
+    p.querySelectorAll('[data-copen]').forEach(b => b.onclick = () => { const r = allRecipes().find(x => x.id === b.dataset.copen); if (r) { closeSheet(); recipeSheet(r); } });
+    p.querySelectorAll('[data-csend]').forEach(b => b.onclick = () => {
+      const m = (S.coachChat || [])[+b.dataset.csend]; if (!m) return;
+      S.inbox.push({ t: Date.now(), text: m.q }); m.sentC = true; save(); ghSoon(2000); coachChatSheet(); toast('اتبعت ✓');
+    });
+  });
+}
+
 /* التمرين بعد التبديل */
 function resolve(ex) {
   const i = S.swaps[ex.id] || 0;
@@ -2421,12 +2525,14 @@ function renderFood(el) {
   ${banner}
   <div class="h2row"><h2>الهدف اليومي</h2>${future ? '<span class="muted small">يوم جاي</span>' : ''}</div>
   <div class="card goals">${bar('السعرات', ek, kc, 'var(--c-carb)', '')}${bar('البروتين', ep, pr, 'var(--c-prot)', 'جم')}${bar('المية', wat, wt, 'var(--c-water)', 'ل')}</div>
+  <button class="askbtn" id="askCoach"><span class="ai">🧢</span><span class="t"><b>اسأل الكابتن</b><small>كام سعر فاضل؟ نفسي في أكلة؟ — رد لحظي</small></span><span class="ar">${ICON.arrowL || '←'}</span></button>
   <div class="h2row"><h2>الوجبات</h2><button class="obtn" id="rcOpen">📖 وصفات</button></div>
   ${ms.map(mealCard).join('')}
   <div class="meal"><div class="meal-top"><h3>أكل زيادة</h3><button id="exAdd">+ ضيف</button></div>
     ${ex.length ? ex.map((e, i) => `<div class="item"><div><b>${esc(e.name)}</b><small><bdi class="num">${e.kcal}</bdi> سعر</small></div><button class="mini del" data-exdel="${i}" aria-label="مسح">${ICON.trash}</button></div>`).join('') : '<p class="muted small" style="margin:12px 0 0">حلو، مشروب، عزومة؟ دوس "ضيف" واختار – السعرات محسوبة.</p>'}
     ${extot ? `<p class="small" style="margin:8px 0 0">المجموع: <b class="num">${extot}</b> سعر</p>` : ''}</div>`;
   bindHead();
+  { const ac = $('#askCoach'); if (ac) ac.onclick = () => coachChatSheet(); }
   el.querySelectorAll('[data-fd]').forEach(b => b.onclick = () => { view.food = b.dataset.fd; render(); });
   el.querySelectorAll('[data-mo]').forEach(b => b.onclick = () => { view.mOpen[b.dataset.mo] = !view.mOpen[b.dataset.mo]; render(); });
   el.querySelectorAll('[data-mph]').forEach(b => b.onclick = () => { view.mOpen[b.dataset.mph] = !view.mOpen[b.dataset.mph]; render(); });
