@@ -57,7 +57,8 @@ public class WatchNotifService extends NotificationListenerService {
 
     /** الإعدادات من صفحة الساعة: {on, apps:{pkg:true}, others, self, calls} */
     static JSONObject cfg(Context c) {
-        try { return new JSONObject(prefs(c).getString("fwd", "{}")); } catch (Exception e) { return new JSONObject(); }
+        // لو محمد لسه مغيّرش حاجة: كله شغال افتراضياً (ما عدا "أي تطبيق تاني")
+        try { JSONObject j = new JSONObject(prefs(c).getString("fwd", "{}")); if (!j.has("on")) j.put("on", true); return j; } catch (Exception e) { return new JSONObject(); }
     }
 
     @Override public void onListenerConnected() {
@@ -86,6 +87,7 @@ public class WatchNotifService extends NotificationListenerService {
             if (!c.optBoolean("on", false)) return;
             Notification n = sbn.getNotification();
             String pkg = sbn.getPackageName();
+            WatchLink.get(this).L("notif " + pkg + " cat=" + n.category + " ongoing=" + ((n.flags & Notification.FLAG_ONGOING_EVENT) != 0) + " fs=" + (n.fullScreenIntent != null) + " act=" + (n.actions == null ? 0 : n.actions.length));
             Bundle ex = n.extras;
             String title = cs(ex, Notification.EXTRA_TITLE).toString();
             String text = cs(ex, Notification.EXTRA_BIG_TEXT).toString();
