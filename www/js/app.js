@@ -1176,12 +1176,13 @@ async function copyText(txt) {
     p => { const ta = $('textarea', p); ta.focus(); ta.select(); });
 }
 
+const topbar = (title, right = '', left = '') => `<div class="topbar">${right || '<span class="sp"></span>'}<h1>${title}</h1>${left || '<span class="sp"></span>'}</div>`;
 function render() {
   document.querySelectorAll('#tabbar button').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
   const el = $('#screen'); el.classList.remove('has-cta');
   ({ home: renderHome, workout: renderWorkout, progress: renderProgress, food: renderFood, menu: renderMenu })[tab](el);
 }
-document.querySelectorAll('#tabbar button').forEach(b => b.onclick = () => { tab = b.dataset.tab; if (tab === 'food') view.food = null; window.scrollTo(0, 0); render(); });
+document.querySelectorAll('#tabbar button').forEach(b => b.onclick = () => { tab = b.dataset.tab; if (tab === 'food') view.food = null; if (tab === 'workout') { view.wOpen = false; view.week = null; } window.scrollTo(0, 0); render(); });
 
 function renderSyncLine() {
   const zl = $('#zeppline');
@@ -1323,7 +1324,33 @@ function dayEntrySheet(d) {
 }
 
 /* ================= التمرين (البرنامج) ================= */
+const ORD = ['الأول', 'التاني', 'التالت', 'الرابع'];
+function dayMinutes(dk, w) { const l = exList(dk, w); return Math.round(l.reduce((a, e) => a + (e.sets || 1) * ((e.rest || 60) + (isTimed(e) ? 30 : 40)), 0) / 60 / 5) * 5 + 10; }
+function renderWorkoutList(el) {
+  const cw = curWeek(), w = view.week || cw, td = today();
+  el.innerHTML = topbar('التمرين', `<button class="iconbtn" id="rulesBtn" aria-label="القواعد">${ICON.info}</button>`) + `
+  <div class="prog"><div class="av"><svg viewBox="0 0 100 100" width="66" height="66"><polyline points="30,18 30,68 45,68 53,44 62,88 70,68 84,68" transform="translate(13 13) scale(.74)" fill="none" stroke="#fff" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+    <div style="flex:1;min-width:0"><h2>برنامج ${S.settings.weeks} أسبوع – الأسبوع ${cw}</h2>
+    <div class="meta"><div><small>الهدف</small><b>دهون أقل + عضل</b></div><div><small>المدة</small><b>60–75 دقيقة</b></div><div><small>المكان</small><b>جيم</b></div></div></div></div>
+  <button class="softbtn" id="progInfo">تفاصيل البرنامج</button>
+  <div class="seg plain"><button class="${w === cw ? 'on' : ''}" data-wk="${cw}">الأسبوع الحالي</button><button class="${w === cw + 1 ? 'on' : ''}" data-wk="${Math.min(cw + 1, S.settings.weeks)}">الأسبوع الجاي</button></div>
+  ${DAYS.map((d, i) => {
+    const date = plannedDate(w, d.key), done = sessDone(w, d.key), off = isBusy(w) && d.optional;
+    const first = exList(d.key, w).find(e => e.kind !== 'warm' && e.img) || exList(d.key, w).find(e => e.img);
+    const n = exList(d.key, w).length;
+    return `<button class="drow ${off ? 'off' : ''}" data-open="${d.key}"><span class="ph">${first ? `<img src="media/${first.img}/0.jpg" alt="" loading="lazy">` : ''}${done ? '<span class="ok">✓</span>' : ''}</span>
+      <div><span class="pill ${date === td ? 'today' : ''}">اليوم ${ORD[i]} · ${d.label} ${short(date)}</span><b>${d.title}</b><small>${off ? 'اتشال الأسبوع ده (أسبوع مزنوق)' : done ? '✓ خلصته' : `${n} تمارين · ~${dayMinutes(d.key, w)} دقيقة`}</small></div>
+      <svg class="arr" viewBox="0 0 24 24"><path d="M19 12H5M11 6l-6 6 6 6"/></svg></button>`; }).join('')}
+  <button class="link small" id="busyBtn" style="margin:14px 2px 0">${isBusy(w) ? 'رجّع الأسبوع 4 أيام' : 'أسبوع مزنوق؟ خليه 3 أيام'}</button>
+  ${w > 1 ? `<button class="link small" id="wOld" style="display:block;margin:10px 2px 0;color:var(--ink2)">الأسابيع اللي فاتت</button>` : ''}`;
+  el.querySelectorAll('[data-wk]').forEach(b => b.onclick = () => { view.week = +b.dataset.wk; render(); });
+  el.querySelectorAll('[data-open]').forEach(b => b.onclick = () => { view.week = w; view.day = b.dataset.open; view.wOpen = true; window.scrollTo(0, 0); render(); });
+  $('#rulesBtn').onclick = $('#progInfo').onclick = rulesSheet;
+  $('#busyBtn').onclick = () => { S.busy = S.busy || {}; if (isBusy(w)) S.busy[w] = false; else S.busy[w] = 'manual'; save(); scheduleReminders(); render(); };
+  const wo = $('#wOld'); if (wo) wo.onclick = () => openSheet(sheetHead('الأسابيع اللي فاتت') + Array.from({ length: cw - 1 }, (_, i) => cw - 1 - i).map(x => `<button class="row" data-ow="${x}"><span>الأسبوع ${x}</span><em>${weekPlan(x).filter(y => y.done).length}/${weekPlan(x).length} حصص</em></button>`).join(''), p => p.querySelectorAll('[data-ow]').forEach(b => b.onclick = () => { closeSheet(); view.week = +b.dataset.ow; render(); }));
+}
 function renderWorkout(el) {
+  if (!view.wOpen) return renderWorkoutList(el);
   if (view.week == null) view.week = curWeek();
   if (!view.day) view.day = (todaysDay() || nextDay()).key;
   const w = view.week, dk = view.day, d = dayByKey(dk);
@@ -1352,35 +1379,26 @@ function renderWorkout(el) {
       </div></div>`;
   };
   el.innerHTML = `
-  <div class="topbar"><h1>التمارين</h1><button class="iconbtn" id="rulesBtn" aria-label="القواعد">${ICON.info.replace('<svg', '<svg')}</button></div>
-  <div class="weekpick">
-    <button class="round" id="wPrev" ${w <= 1 ? 'disabled' : ''} aria-label="الأسبوع اللي فات">${ICON.right}</button>
-    <div class="lbl"><small>البرنامج</small><b>الأسبوع ${w}</b></div>
-    <button class="round" id="wNext" ${w >= S.settings.weeks ? 'disabled' : ''} aria-label="الأسبوع الجاي">${ICON.left}</button>
-  </div>
-  <div class="days">${DAYS.map((x, i) => { const s = S.logs[sessKey(w, x.key)]; const has = s && Object.values(s.ex).some(a => a.length); return `<button class="day ${x.key === dk ? 'on' : ''}" data-day="${x.key}">${has ? '<span class="done"></span>' : ''}<small>${x.label}</small><b class="num">${i + 1}</b></button>`; }).join('')}</div>
+  ${topbar('التمرين', `<button class="iconbtn" id="wBack" aria-label="رجوع">${ICON.right}</button>`, `<button class="iconbtn" id="rulesBtn" aria-label="القواعد">${ICON.info}</button>`)}
+  <p class="muted small" style="margin:12px 2px 0">الأسبوع ${w} · ${d.label} ${short(plannedDate(w, dk))}</p>
   <div class="daytitle"><h2>${d.title}</h2><span>${list.length} تمارين</span></div>
   <p class="daysub">${d.sub}${d.optional ? ' · ده اليوم اللي يتشال لو الأسبوع مزنوق' : ''}</p>
   ${isBusy(w) && d.optional ? `<div class="verdict warn" style="margin-bottom:14px"><h3>الأسبوع ده 3 أيام</h3><p>اليوم ده اتشال، والكتف الجانبي والفيس بول اتنقلوا لـ LOWER A.</p></div>` : ''}
   ${isBusy(w) && dk === 'lowerA' ? `<p class="small" style="margin:0 4px 12px;color:var(--warn)">+ رفرفة جانبي وفيس بول من LOWER B (أسبوع مزنوق)</p>` : ''}
   ${rd && rd.level !== 'green' ? `<div class="verdict ${rd.level === 'red' ? 'warn' : 'info'}" style="margin-bottom:14px"><h3>${READY_TXT[rd.level][0]}</h3><p>${READY_TXT[rd.level][1]} (${rd.why.join(' · ')}) – المجموعات تحت متظبطة.</p></div>` : ''}
-  <button class="link small" id="busyBtn" style="margin:0 4px 12px">${isBusy(w) ? 'رجّع الأسبوع 4 أيام' : 'أسبوع مزنوق؟ خليه 3 أيام'}</button>
   <button class="banner" id="warmBtn" style="margin-bottom:14px"><b>🔥 التسخين · ${WARMUP[warmKind(dk)].time}</b><span>${sess && sess.warm ? '✓ سخّنت' : 'قبل أول تمرين – عشان متتصابش'}</span></button>
   ${groups.map(g => `<div class="card">${g.length > 1 ? g.map((ex, i) => exHtml(ex, i + 1)).join('') : exHtml(g[0])}
      ${g.length > 1 ? `<div class="note small"><span>${g[0].kind === 'warm' ? 'الاتنين ورا بعض من غير راحة' : 'سوبر سِت: الاتنين ورا بعض'}</span></div>` : ''}
    </div>`).join('')}
   <div class="cta-bar"><button class="btn red" id="startBtn">${sess && Object.keys(sess.ex).length ? 'كمّل التمرين' : 'ابدأ التمرين'} ${ICON.arrowL}</button></div>`;
   el.classList.add('has-cta');
-  $('#wPrev').onclick = () => { view.week--; render(); };
-  $('#wNext').onclick = () => { view.week++; render(); };
-  el.querySelectorAll('[data-day]').forEach(b => b.onclick = () => { view.day = b.dataset.day; render(); });
+  $('#wBack').onclick = () => { view.wOpen = false; window.scrollTo(0, 0); render(); };
   el.querySelectorAll('[data-info]').forEach(b => b.onclick = () => infoSheet(findEx(dk, b.dataset.info)));
   el.querySelectorAll('[data-swap]').forEach(b => b.onclick = () => swapSheet(dk, b.dataset.swap, render));
   el.querySelectorAll('[data-log]').forEach(b => b.onclick = () => logSheet(w, dk, findEx(dk, b.dataset.log), () => render()));
   $('#startBtn').onclick = () => { const s0 = S.logs[sessKey(w, dk)]; if (!(s0 && (s0.warm || Object.values(s0.ex).some(a => a.length)))) warmSheet(w, dk, () => startPlayer(w, dk)); else startPlayer(w, dk); };
   $('#warmBtn').onclick = () => warmSheet(w, dk);
   $('#rulesBtn').onclick = rulesSheet;
-  $('#busyBtn').onclick = () => { S.busy = S.busy || {}; if (isBusy(w)) S.busy[w] = false; else S.busy[w] = 'manual'; save(); scheduleReminders(); render(); };
 }
 const findEx = (dk, id) => { const w = view.week || curWeek(); const isNow = w === curWeek() && plannedDate(w, dk) <= today() && !sessDone(w, dk); return exList(dk, w, isNow ? readiness().level : null).find(e => e.id === id) || exList(dk, w).find(e => e.id === id); };
 
@@ -1660,7 +1678,7 @@ function strengthRows() {
 function renderProgress(el) {
   const v = verdict(); const rows = weekRows(); const str = strengthRows();
   const bodyDates = Object.keys(S.body).sort().reverse();
-  el.innerHTML = `<div class="topbar"><h1>التقدّم</h1></div>
+  el.innerHTML = `${topbar('التقدّم')}
   <div class="verdict ${v.cls}"><h3>${v.t}</h3><p>${v.d}</p></div>
   ${(() => { const a = adaptive(); if (!a) return `<div class="section-t">حرقك الحقيقي</div><div class="card pad"><p class="muted small" style="margin:0;line-height:1.7">بعد ~2 أسبوع وزن يومي وأكل متعلّم عليه، الكابتن هيحسب حرقك الحقيقي ويظبط السعرات لوحده.</p></div>`;
     return `<div class="section-t">حرقك الحقيقي (آخر 3 أسابيع)</div><div class="card pad">
@@ -1762,38 +1780,84 @@ function rawTxt(it) {
   const raw = Math.round(it.g * def.f / 5) * 5;
   return `<div class="raw">${def.f < 1 ? 'قبل السلق' : 'قبل الطبخ'}: <bdi class="num">${raw}</bdi> جم ${def.f < 1 ? 'ناشف' : 'ني'}</div>`;
 }
+const SVG_POT = '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10h16v5a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5zM2 10h2M20 10h2M9 6c0-1 1-1 1-2M14 6c0-1 1-1 1-2"/></svg>';
+const SVG_BASKET = '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9h18l-2 11H5zM8 9l2-5M16 9l-2-5M9 13v4M12 13v4M15 13v4"/></svg>';
+const SVG_BOOK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5c3-1 6-1 9 1 3-2 6-2 9-1v14c-3-1-6-1-9 1-3-2-6-2-9-1zM12 6v14M6 9h3M6 12h3M15 9h3"/></svg>';
+const MEAL_EMOJI = { m1: '🍳', m2: '🍠', drink: '🥤', m3: '🍗' };
+function renderShopTab(el, head) {
+  const sh = shopState(), list = shopCompute(sh.start), end = addDays(sh.start, 13), left = diffDays(end, today());
+  const done = list.filter(x => sh.bought[x.id]).length;
+  el.innerHTML = head + `
+  <div class="h2row"><h2>لستة الأسبوعين</h2><span class="muted small">${short(sh.start)} → ${short(end)}</span></div>
+  <div class="goals card"><div class="goal"><span>اشتريت</span><div class="track"><i style="width:${list.length ? done / list.length * 100 : 0}%;background:var(--ok)"></i></div><b class="num">${done}/${list.length}</b></div></div>
+  ${left < 0 ? '<div class="banner warn mt"><b>اللستة خلصت</b><span>ابدأ لستة جديدة من تحت.</span></div>' : left <= 2 ? `<div class="banner warn mt"><b>فاضل ${left + 1} يوم</b><span>جهّز اللستة الجاية.</span></div>` : ''}
+  <p class="muted small" style="line-height:1.7;margin:14px 2px 4px">الكميات ني وناشف زي ما هتشتريها، محسوبة من خطة الأسبوعين.</p>
+  ${list.map(x => `<button class="shop-row ${sh.bought[x.id] ? 'on' : ''}" data-buy="${esc(x.id)}"><span class="box">${sh.bought[x.id] ? '✓' : ''}</span><div><b>${esc(x.name)}</b>${[x.sub, x.cookedTxt].filter(Boolean).length ? `<small>${[x.sub, x.cookedTxt].filter(Boolean).join(' · ')}</small>` : ''}${sh.bought[x.id] ? `<span class="when">اشتريته ${short(sh.bought[x.id])}</span>` : ''}</div><span class="q"><bdi class="num">${x.qty}</bdi></span></button>`).join('')}
+  <label style="display:flex;align-items:center;gap:10px;margin-top:14px"><input type="checkbox" id="lecBox" ${S.settings.lectureBox !== false ? 'checked' : ''} style="width:20px;height:20px"><span class="small">احسب علبة العشا لأيام المحاضرة</span></label>
+  <div class="grid2 mt"><button class="btn ghost sm" id="shAll">علّم الكل اتشرى</button><button class="btn ghost sm" id="shCopy">انسخ اللستة</button></div>
+  <button class="btn red block mt" id="shNew">ابدأ لستة جديدة من النهارده</button>`;
+  el.querySelectorAll('[data-buy]').forEach(b => b.onclick = () => { const id = b.dataset.buy; if (sh.bought[id]) delete sh.bought[id]; else sh.bought[id] = today(); save(); render(); });
+  $('#lecBox').onchange = e => { S.settings.lectureBox = e.target.checked; save(); render(); };
+  $('#shAll').onclick = () => { list.forEach(x => { if (!sh.bought[x.id]) sh.bought[x.id] = today(); }); save(); render(); toast('اتعلّم ✓'); };
+  $('#shCopy').onclick = () => copyText(`🛒 لستة ${short(sh.start)} → ${short(end)}\n` + list.filter(x => !sh.bought[x.id]).map(x => `- ${x.name}: ${x.qty}${x.sub ? ' (' + x.sub + ')' : ''}`).join('\n'));
+  $('#shNew').onclick = e => { const btn = e.currentTarget; if (!btn.dataset.sure) { btn.dataset.sure = 1; btn.textContent = 'متأكد؟ اضغط تاني'; return; } S.shop = { start: today(), bought: {} }; save(); render(); };
+}
 function renderFood(el) {
   const td = today();
   if (!view.food) view.food = td;
+  view.mOpen = view.mOpen || {};
+  const head = topbar('التغذية', `<button class="iconbtn" id="dInfo" aria-label="معلومات">${ICON.info}</button>`, `<button class="iconbtn" id="rcTop" aria-label="وصفات">${SVG_BOOK}</button>`)
+    + `<div class="seg"><button class="${view.foodTab !== 'shop' ? 'on' : ''}" data-ft="plan">${SVG_POT}البرنامج الغذائي</button><button class="${view.foodTab === 'shop' ? 'on' : ''}" data-ft="shop">${SVG_BASKET}السوبر ماركت</button></div>`;
+  const bindHead = () => {
+    el.querySelectorAll('[data-ft]').forEach(b => b.onclick = () => { view.foodTab = b.dataset.ft; render(); });
+    $('#rcTop').onclick = () => recipesSheet();
+    $('#dInfo').onclick = () => openSheet(sheetHead('ليه الأرقام دي؟') + `<p style="line-height:1.8">الهدف ~${fmt(S.settings.kcal)} سعر و~${DIET.protein} جم بروتين في اليوم العادي. الكابتن بيحسب حرقك الحقيقي كل أسبوع من الأكل اللي بتعلّم عليه ومتوسط وزنك، ويقترح تعديل في رز العشا.</p><p style="line-height:1.8" class="muted">علّم على كل وجبة بعد ما تاكلها، وسجّل أي أكل زيادة – ده اللي بيخلي الحسبة صح.</p>`);
+  };
+  if (view.foodTab === 'shop') { renderShopTab(el, head); bindHead(); return; }
   const t = view.food, eaten = (S.days[t] || {}).meals || {}, ms = mealsFor(t), dt = dayType(t), future = t > td;
-  // امبارح + النهارده + 6 أيام جايين
   const week = Array.from({ length: 8 }, (_, i) => addDays(td, i - 1));
-  const tag = d => isMomFri(d) ? 'ماما' : isLecture(d) ? 'محاضرة' : (DAYS.find(x => x.dow === parseISO(d).getDay()) ? 'تمرين' : 'راحة');
+  const allEaten = d => { const e2 = (S.days[d] || {}).meals || {}; const m2 = mealsFor(d); return m2.length && m2.every(m => e2[m.id]); };
   const kc = ms.reduce((a, m) => a + m.kcal, 0), pr = ms.reduce((a, m) => a + m.p, 0);
-  const ek = ms.reduce((a, m) => a + (eaten[m.id] ? m.kcal : 0), 0), ep = ms.reduce((a, m) => a + (eaten[m.id] ? m.p : 0), 0);
-  const banner = dt === 'mom' ? `<div class="verdict ok"><h3>جمعة ماما 😄</h3><p>ميزانية النهارده ~${fmt(kc)} سعر. استمتع: البروتين الأول، طبق واحد مليان، حتة حلو واحدة. ومتصومش بكرة.</p></div>`
-    : dt === 'lecture' ? `<div class="verdict info"><h3>يوم محاضرة 🎓</h3><p>العشا برة أو في البريك. اختار تحت اللي أكلته عشان الحسبة تبقى صح.</p></div>` : '';
+  const ek = ms.reduce((a, m) => a + (eaten[m.id] ? m.kcal : 0), 0) + extraOf(t), ep = ms.reduce((a, m) => a + (eaten[m.id] ? m.p : 0), 0);
+  const wat = eff(t).water || 0, wt = S.settings.water;
+  const banner = dt === 'mom' ? `<div class="banner ok mt"><b>جمعة ماما 😄</b><span>ميزانية النهارده ~${fmt(kc)} سعر. البروتين الأول، طبق واحد مليان، حتة حلو واحدة.</span></div>`
+    : dt === 'lecture' ? `<div class="banner mt"><b>يوم محاضرة 🎓</b><span>العشا برة – اختار اللي أكلته عشان الحسبة تبقى صح.</span></div>` : '';
   const itemRow = (it, mid) => `<div class="item"><span class="food-ic">${esc(it.name.trim()[0])}</span><div><b>${esc(it.name)}</b>${it.kcal ? `<small><bdi class="num">${it.kcal}</bdi> سعر · <bdi class="num">${it.p}</bdi> بروتين</small>` : ''}${rawTxt(it)}${it.swapped ? `<div class="swapped">بدل ${esc(it.base)}</div>` : ''}${it.adj ? `<div class="swapped">${it.adj > 0 ? '+' : ''}${it.adj} جم من تعديل الكابتن</div>` : ''}</div>${it.drinkCut ? `<div class="swapped">−${it.drinkCut} جم يوم التمرين (راحت للمشروب)</div>` : ''}${((DIET.meals.find(x => x.id === mid) || { items: [] }).items.find(x => x.id === it.id) || {}).alts?.length ? `<button class="mini" data-fs="${it.id}" aria-label="بدّل">${ICON.swap}</button>` : ''}<span class="qty"><bdi class="num">${it.g}</bdi><small>${it.unit || 'جم'}</small></span></div>`;
-  el.innerHTML = `<div class="topbar"><h1>النظام الغذائي</h1><button class="iconbtn" id="dInfo" aria-label="معلومات">${ICON.info}</button></div>
-  <div class="quick" style="padding:0 0 12px">${week.map(d => `<button data-fd="${d}" style="${d === t ? 'background:var(--red);color:#fff;border-color:var(--red)' : ''};height:auto;padding:8px 12px;line-height:1.3"><span style="display:block;font-size:13px">${d === td ? 'النهارده' : d === addDays(td, -1) ? 'امبارح' : AR_DAYS[parseISO(d).getDay()]}</span><small style="font-size:11px;opacity:.8">${tag(d)}</small></button>`).join('')}</div>
-  ${future ? `<p class="muted small" style="margin:0 4px 10px">ده أكل ${nice(t)} – هتعلّم عليه يومها.</p>` : ''}
-  ${banner ? banner + '<div class="mt"></div>' : ''}
-  <div class="grid2 mt">${t === td ? shopCard() : ''}<button class="pill-btn" id="rcOpen"><b>📖 وصفات</b><small>على قد سعراتك</small></button></div>
-  <div class="totals"><div class="tile"><small>السعرات</small><b class="num">${fmt(ek)} / ${fmt(kc)}</b><div class="bar ok"><i style="width:${Math.min(100, ek / kc * 100)}%"></i></div></div>
-  <div class="tile"><small>البروتين (جم)</small><b class="num">${fmt(ep)} / ${fmt(pr)}</b><div class="bar ok"><i style="width:${Math.min(100, ep / pr * 100)}%"></i></div></div></div>
-  ${ms.map(m => `<div class="card mt">
-    <div class="meal-h"><div><h3>${m.title}</h3><small>${m.time} · <bdi class="num">${m.kcal}</bdi> سعر · <bdi class="num">${m.p}</bdi> بروتين${(S.mealPhotos[t] || []).filter(x => x.meal === m.id).length ? ` · 📸 ${(S.mealPhotos[t] || []).filter(x => x.meal === m.id).length}` : ''}</small></div>${future ? '' : `<label class="eat" style="cursor:pointer" aria-label="صوّر الطبق"><svg viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg><input type="file" accept="image/*" capture="environment" data-mp="${m.id}" hidden></label>`}${future ? '' : `<button class="eat ${eaten[m.id] ? 'on' : ''}" data-eat="${m.id}" aria-label="أكلتها">${ICON.check}</button>`}</div>
-    ${(() => { const rc = ((S.days[t] || {}).recipes || {})[m.id]; return rc ? `<div class="item" style="background:var(--red-soft)"><span class="food-ic" style="background:var(--red);color:#fff">📖</span><div><b>بدلها: ${esc(rc.name)}</b><small><span class="num">${rc.kcal}</span> سعر · <span class="num">${rc.p}</span> جم بروتين</small></div><button class="mini" data-rcm="${m.id}" aria-label="الوصفة">${ICON.arrowL}</button><button class="mini del" data-rcx="${m.id}" aria-label="شيل">${ICON.trash}</button></div>` : ''; })()}
-    ${m.special ? m.options.map(o => `<button class="item" style="width:100%;text-align:start" data-opt="${o.id}"><span class="food-ic" style="${m.pick === o.id ? 'background:var(--red);color:#fff' : ''}">${m.pick === o.id ? '✓' : ''}</span><div><b>${esc(o.name)}</b><small>${esc(o.desc)}</small><br><small><span class="num">${o.id === 'box' ? m.boxItems.reduce((a, x) => a + x.kcal, 0) : o.kcal}</span> سعر · <span class="num">${o.p}</span> جم بروتين</small></div></button>`).join('')
-      : m.items.map(it => itemRow(it, m.id)).join('')}
-    <div class="note"><span class="i">i</span><span class="lbl">ملاحظة</span><span>${esc(m.note)}</span></div>
-    ${future || m.drink ? '' : `<button class="link small" data-rcfor="${m.id}" style="display:block;margin:0 16px 14px;line-height:1.6">📖 وصفة تانية بنفس السعرات</button>`}</div>`).join('')}
-  ${(() => { const ex = (S.days[t] || {}).extras || []; const tot = extraOf(t); return `<div class="card mt"><div class="meal-h"><div><h3>أكل زيادة</h3><small>حلو، مشروب، سناك، عزومة · ${tot ? `<span class="num">${tot}</span> سعر النهارده` : 'مفيش لسه'}</small></div><button class="sq red" id="exAdd" aria-label="ضيف">${ICON.plus}</button></div>
-    ${ex.map((e, i) => `<div class="item"><span class="food-ic">${esc(e.name.trim()[0])}</span><div><b>${esc(e.name)}</b><small><span class="num">${e.kcal}</span> سعر</small></div><button class="mini del" data-exdel="${i}" aria-label="مسح">${ICON.trash}</button></div>`).join('')}
-    ${!ex.length ? '<p class="muted small" style="margin:0;padding:12px 16px">اضغط + واختار اللي أكلته من القايمة – السعرات محسوبة جاهزة.</p>' : ''}</div>`; })()}`;
+  const bar = (lab, v, of, col, unit) => `<div class="goal"><span>${lab}</span><div class="track"><i style="width:${of ? Math.min(100, v / of * 100) : 0}%;background:${col}"></i></div><b class="num">${fmt(v, unit === 'ل' ? 2 : 0)}<small> / ${fmt(of, unit === 'ل' ? 1 : 0)} ${unit}</small></b></div>`;
+  const photos = d => S.mealPhotos[d] || [];
+  const mealCard = m => {
+    const open = !!view.mOpen[m.id], rc = ((S.days[t] || {}).recipes || {})[m.id];
+    const names = rc ? rc.name : m.special ? (m.options.find(o => o.id === m.pick) || {}).name || m.title : m.items.filter(x => x.kcal).map(x => x.name.replace(/\s*\(.*\)/, '')).slice(0, 4).join(' + ');
+    const nPh = photos(t).filter(x => x.meal === m.id).length;
+    return `<div class="meal">
+      <div class="meal-top"><h3>${m.title}</h3><button data-mo="${m.id}">${open ? 'اقفل' : 'اعرض الوجبة'} <svg viewBox="0 0 24 24"><path d="${open ? 'M6 15l6-6 6 6' : 'M19 12H5M11 6l-6 6 6 6'}"/></svg></button></div>
+      <div class="meal-body"><div class="meal-pic" data-mph="${m.id}">${MEAL_EMOJI[m.id] || '🍽️'}<span class="kc"><bdi class="num">${rc ? rc.kcal : m.kcal}</bdi> ك</span></div>
+        <div class="meal-txt"><b>${esc(names)}</b><small>${m.time} · ${rc ? rc.p : m.p} جم بروتين${nPh ? ` · 📸 ${nPh}` : ''}</small></div>
+        ${future ? '' : `<button class="tick ${eaten[m.id] ? 'on' : ''}" data-eat="${m.id}" aria-label="أكلتها"><svg viewBox="0 0 24 24"><path d="M5 12l5 5 9-10"/></svg></button>`}</div>
+      ${open ? `<div class="meal-items">
+        ${rc ? `<div class="item"><span class="food-ic">📖</span><div><b>بدلها: ${esc(rc.name)}</b><small><bdi class="num">${rc.kcal}</bdi> سعر · <bdi class="num">${rc.p}</bdi> بروتين</small></div><button class="mini" data-rcm="${m.id}" aria-label="الوصفة">${ICON.arrowL}</button><button class="mini del" data-rcx="${m.id}" aria-label="شيل">${ICON.trash}</button></div>` : ''}
+        ${m.special ? m.options.map(o => `<button class="item" style="width:100%;text-align:start" data-opt="${o.id}"><span class="food-ic" style="${m.pick === o.id ? 'background:var(--red);color:#fff' : ''}">${m.pick === o.id ? '✓' : ''}</span><div><b>${esc(o.name)}</b><small>${esc(o.desc)}</small><small><bdi class="num">${o.id === 'box' ? m.boxItems.reduce((a, x) => a + x.kcal, 0) : o.kcal}</bdi> سعر · <bdi class="num">${o.p}</bdi> بروتين</small></div></button>`).join('') : m.items.map(it => itemRow(it, m.id)).join('')}
+        ${m.note ? `<p class="small muted" style="margin:10px 0 0;line-height:1.7">💡 ${esc(m.note)}</p>` : ''}
+        ${future ? '' : `<div class="meal-acts"><label style="cursor:pointer">📸 صوّر الطبق<input type="file" accept="image/*" capture="environment" data-mp="${m.id}" hidden></label>${m.drink ? '' : `<button data-rcfor="${m.id}">📖 وصفة تانية بنفس السعرات</button>`}</div>`}
+      </div>` : ''}
+    </div>`;
+  };
+  const ex = (S.days[t] || {}).extras || [], extot = extraOf(t);
+  el.innerHTML = head + `
+  <div class="dstrip">${week.map(d => `<button class="dchip ${d === t ? 'on' : allEaten(d) ? 'done' : ''}" data-fd="${d}"><small>${d === td ? 'النهارده' : AR_DAYS[parseISO(d).getDay()].replace('ال', '')}</small><i>${allEaten(d) ? '✓' : ''}</i><b class="num">${parseISO(d).getDate()}</b></button>`).join('')}</div>
+  ${banner}
+  <div class="h2row"><h2>الهدف اليومي</h2>${future ? '<span class="muted small">يوم جاي</span>' : ''}</div>
+  <div class="card goals">${bar('السعرات', ek, kc, 'var(--c-carb)', '')}${bar('البروتين', ep, pr, 'var(--c-prot)', 'جم')}${bar('المية', wat, wt, 'var(--c-water)', 'ل')}</div>
+  <div class="h2row"><h2>الوجبات</h2><button class="obtn" id="rcOpen">📖 وصفات</button></div>
+  ${ms.map(mealCard).join('')}
+  <div class="meal"><div class="meal-top"><h3>أكل زيادة</h3><button id="exAdd">+ ضيف</button></div>
+    ${ex.length ? ex.map((e, i) => `<div class="item"><div><b>${esc(e.name)}</b><small><bdi class="num">${e.kcal}</bdi> سعر</small></div><button class="mini del" data-exdel="${i}" aria-label="مسح">${ICON.trash}</button></div>`).join('') : '<p class="muted small" style="margin:12px 0 0">حلو، مشروب، عزومة؟ دوس "ضيف" واختار – السعرات محسوبة.</p>'}
+    ${extot ? `<p class="small" style="margin:8px 0 0">المجموع: <b class="num">${extot}</b> سعر</p>` : ''}</div>`;
+  bindHead();
   el.querySelectorAll('[data-fd]').forEach(b => b.onclick = () => { view.food = b.dataset.fd; render(); });
+  el.querySelectorAll('[data-mo]').forEach(b => b.onclick = () => { view.mOpen[b.dataset.mo] = !view.mOpen[b.dataset.mo]; render(); });
+  el.querySelectorAll('[data-mph]').forEach(b => b.onclick = () => { view.mOpen[b.dataset.mph] = !view.mOpen[b.dataset.mph]; render(); });
   el.querySelectorAll('[data-mp]').forEach(inp => inp.onchange = async () => { const f = inp.files && inp.files[0]; if (!f) return; try { await addMealPhoto(t, inp.dataset.mp, f); toast(ghOn() ? 'اتحفظت ✓ – الكابتن هيحسبها الصبح' : 'اتحفظت ✓'); render(); } catch (e) { toast('مقدرتش أحفظ الصورة'); } });
-  const so = $('#shopOpen'); if (so) so.onclick = shopSheet;
   $('#rcOpen').onclick = () => recipesSheet();
   el.querySelectorAll('[data-rcfor]').forEach(b => b.onclick = () => recipesSheet(b.dataset.rcfor));
   el.querySelectorAll('[data-rcm]').forEach(b => b.onclick = () => { const x = (S.days[t] || {}).recipes || {}; const rr = x[b.dataset.rcm]; const r = rr && allRecipes().find(z => z.id === rr.id); if (r) recipeSheet(r, b.dataset.rcm); });
@@ -1803,7 +1867,6 @@ function renderFood(el) {
   el.querySelectorAll('[data-fs]').forEach(b => b.onclick = () => foodSwapSheet(b.dataset.fs));
   $('#exAdd').onclick = () => future ? toast('سجّل الأكل الزيادة يومها') : extrasSheet(t);
   el.querySelectorAll('[data-exdel]').forEach(b => b.onclick = () => { const d = day(t); d.extras.splice(+b.dataset.exdel, 1); save(); render(); });
-  $('#dInfo').onclick = () => openSheet(sheetHead('ليه الأرقام دي؟') + `<p style="line-height:1.8">الهدف ~${fmt(S.settings.kcal)} سعر و~${DIET.protein} جم بروتين في اليوم العادي. الكابتن بيحسب حرقك الحقيقي كل أسبوع من الأكل اللي بتعلّم عليه ومتوسط وزنك، ويقترح تعديل في رز العشا.</p><p style="line-height:1.8" class="muted">علّم على كل وجبة بعد ما تاكلها، وسجّل أي أكل زيادة – ده اللي بيخلي الحسبة صح. اليوم اللي مفيهوش ولا علامة بيتحسب كأنك مشيت على الخطة.</p>`);
 }
 function extrasSheet(d) {
   let q = '';
@@ -1841,7 +1904,7 @@ function renderMenu(el) {
     ['shield', 'قواعد الكابتن والمصادر', rulesSheet, ''],
     ['report', 'أدوات تانية', moreSheet, '']
   ];
-  el.innerHTML = `<div class="hello" style="padding-bottom:18px;border-bottom:1px solid var(--line)"><h1>أهلاً</h1><div style="font-size:22px">${esc(S.settings.name)} 👋</div></div>
+  el.innerHTML = `${topbar('المزيد')}
    <div class="section-t">الحساب</div><div class="rows">${rows.map((r, i) => `<button class="row" data-r="${i}">${ICON[r[0]]}<span>${r[1]}</span>${r[3] ? `<em>${r[3]}</em>` : ''}${ICON.arr}</button>`).join('')}</div>
    <p class="muted small mt" style="text-align:center">Lifestyle · ${cloudInfo.linked ? 'البيانات متزامنة مع Google Drive' : 'البيانات على الموبايل ده بس'}</p>`;
   el.querySelectorAll('[data-r]').forEach(b => b.onclick = rows[+b.dataset.r][2]);
