@@ -106,12 +106,20 @@ function mealItems(m) {
     return x;
   });
 }
-/* الوجبات لليوم ده: العشا بيتغيّر يوم المحاضرة وجمعة ماما */
+/* يوم تمرين؟ (حسب الخطة، أو لو اتمرّن فعلاً اليوم ده) */
+function trainDayOf(d) {
+  if (diffDays(d, S.settings.start) < 0) return false;
+  if (weekPlan(weekOf(d)).some(x => x.date === d)) return true;
+  return Object.values(S.logs).some(x => x.date === d && !x.legacy && Object.values(x.ex).some(a => a.length));
+}
+const DRINK_KCAL = DRINK.items.reduce((a, x) => a + x.kcal, 0);
+/* الوجبات لليوم ده: العشا بيتغيّر يوم المحاضرة وجمعة ماما، ويوم التمرين فيه مشروب التمرين والبطاطا أقل */
 function mealsFor(d) {
-  const t = dayType(d);
-  return DIET.meals.map(m => {
-    const its = mealItems(m);
-    const base = { id: m.id, title: m.title, time: m.time, where: m.where, note: m.note, items: its, kcal: its.reduce((a, x) => a + x.kcal, 0), p: its.reduce((a, x) => a + x.p, 0) };
+  const t = dayType(d), train = trainDayOf(d);
+  const out = DIET.meals.map(m => {
+    let its = mealItems(m);
+    if (train && m.id === 'm2') its = its.map(x => { if (x.id !== 'sweet') return x; const g = Math.max(0, Math.round(x.g * (x.kcal - DRINK_KCAL) / x.kcal / 5) * 5); return Object.assign({}, x, { g, kcal: Math.round(x.kcal * g / x.g), p: Math.round(x.p * g / x.g), drinkCut: x.g - g }); });
+    const base = { id: m.id, title: m.title, time: m.time, where: m.where, note: train && m.id === 'm2' ? m.note + ' يوم التمرين البطاطا أقل – سعراتها راحت لمشروب التمرين.' : m.note, items: its, kcal: its.reduce((a, x) => a + x.kcal, 0), p: its.reduce((a, x) => a + x.p, 0) };
     if (m.id === 'm2' && t === 'mom') { const it2 = its.filter(x => x.id !== 'choc'); return Object.assign(base, { items: it2, kcal: it2.reduce((a, x) => a + x.kcal, 0), p: it2.reduce((a, x) => a + x.p, 0), note: 'النهارده من غير شيكولاتة – سيب مكان لأكل ماما.' }); }
     if (m.id === 'm3' && t !== 'normal') {
       const sp = t === 'mom' ? SPECIAL.mom : SPECIAL.lecture;
@@ -121,6 +129,8 @@ function mealsFor(d) {
     }
     return base;
   });
+  if (train) { const di = DRINK.items.map(x => Object.assign({}, x)); out.splice(2, 0, { id: 'drink', title: DRINK.title, time: DRINK.time, where: DRINK.where, note: DRINK.note, items: di, kcal: di.reduce((a, x) => a + x.kcal, 0), p: di.reduce((a, x) => a + x.p, 0), drink: true }); }
+  return out;
 }
 const kcalTarget = d => mealsFor(d).reduce((a, m) => a + m.kcal, 0);
 const extraOf = d => { const x = S.days[d] || {}; return (x.extraKcal || 0) + (x.extras || []).reduce((a, e) => a + e.kcal, 0); };
@@ -949,7 +959,7 @@ function shopCompute(start) {
     let qty, sub = '';
     if (o.each) { const n = Math.ceil(o.g / o.each); qty = `${n} ${o.name === 'بيض' ? 'بيضة' : 'حتة'}`; if (o.packEach && o.packEach[0] > 1) sub = `≈ ${Math.ceil(n / o.packEach[0])} ${o.packEach[1]}`; }
     else { const kg = o.g / 1000; qty = kg >= 1 ? `${fmt(Math.ceil(kg * 10) / 10, 1)} كجم` : `${Math.ceil(o.g / 50) * 50} جم`; if (o.pack) sub = `≈ ${Math.ceil(o.g / o.pack[0])} ${o.pack[1]} (${o.pack[0] >= 1000 ? o.pack[0] / 1000 + ' كجم' : o.pack[0] + ' جم'})`; }
-    const cookedTxt = Math.abs(o.f - 1) > 0.05 ? `في الأكل: ${o.cooked >= 1000 ? fmt(o.cooked / 1000, 1) + ' كجم' : Math.round(o.cooked) + ' جم'} ${o.f < 1 ? 'مسلوق' : 'مطبوخ'}` : '';
+    const cookedTxt = !o.noRaw && Math.abs(o.f - 1) > 0.05 ? `في الأكل: ${o.cooked >= 1000 ? fmt(o.cooked / 1000, 1) + ' كجم' : Math.round(o.cooked) + ' جم'} ${o.f < 1 ? 'مسلوق' : 'مطبوخ'}` : '';
     return { id: o.name, name: o.name, qty, sub, cookedTxt, note: o.note || '' };
   }).sort((a, b) => a.name.localeCompare(b.name, 'ar'));
 }
@@ -1261,7 +1271,7 @@ function renderHome(el) {
     ${cell('tSt', 'خطوات', e.steps != null ? fmt(e.steps) : '—', stepPct >= 100)}
     ${cell('tS', 'نوم', e.sleep ? `${Math.floor(e.sleep / 60)}:${pad2(e.sleep % 60)}${sq ? `<i class="q ${sq.level}">${sq.score}</i>` : ''}` : '—')}
     ${cell('tW', 'وزن', lastW ? fmt(lastW.w, 1) : '—', lastW && lastW.d === t)}
-    ${cell('cMe', 'وجبات', `${mealsEaten}/3`, mealsEaten === 3)}
+    ${cell('cMe', 'وجبات', `${mealsEaten}/${mealsFor(t).length}`, mealsEaten >= mealsFor(t).length)}
     ${cell('cWa', 'مية (لتر)', `${fmt(e.water, 2)}/${set.water}`, e.water >= set.water)}
     ${cell('cCr', 'كرياتين', e.creatine ? '✓' : '5 جم', e.creatine)}
   </div>
@@ -1748,7 +1758,7 @@ ${c.note}` : ''}`); }
 /* ================= الأكل ================= */
 function rawTxt(it) {
   const def = it.swapped ? SHOP_ALT[it.name] : SHOP[it.id];
-  if (!def || Math.abs(def.f - 1) < 0.1) return '';
+  if (!def || def.noRaw || Math.abs(def.f - 1) < 0.1) return '';
   const raw = Math.round(it.g * def.f / 5) * 5;
   return `<div class="raw">${def.f < 1 ? 'قبل السلق' : 'قبل الطبخ'}: <bdi class="num">${raw}</bdi> جم ${def.f < 1 ? 'ناشف' : 'ني'}</div>`;
 }
@@ -1763,7 +1773,7 @@ function renderFood(el) {
   const ek = ms.reduce((a, m) => a + (eaten[m.id] ? m.kcal : 0), 0), ep = ms.reduce((a, m) => a + (eaten[m.id] ? m.p : 0), 0);
   const banner = dt === 'mom' ? `<div class="verdict ok"><h3>جمعة ماما 😄</h3><p>ميزانية النهارده ~${fmt(kc)} سعر. استمتع: البروتين الأول، طبق واحد مليان، حتة حلو واحدة. ومتصومش بكرة.</p></div>`
     : dt === 'lecture' ? `<div class="verdict info"><h3>يوم محاضرة 🎓</h3><p>العشا برة أو في البريك. اختار تحت اللي أكلته عشان الحسبة تبقى صح.</p></div>` : '';
-  const itemRow = (it, mid) => `<div class="item"><span class="food-ic">${esc(it.name.trim()[0])}</span><div><b>${esc(it.name)}</b><small><bdi class="num">${it.kcal}</bdi> سعر · <bdi class="num">${it.p}</bdi> بروتين</small>${rawTxt(it)}${it.swapped ? `<div class="swapped">بدل ${esc(it.base)}</div>` : ''}${it.adj ? `<div class="swapped">${it.adj > 0 ? '+' : ''}${it.adj} جم من تعديل الكابتن</div>` : ''}</div>${(DIET.meals.find(x => x.id === mid).items.find(x => x.id === it.id) || {}).alts?.length ? `<button class="mini" data-fs="${it.id}" aria-label="بدّل">${ICON.swap}</button>` : ''}<span class="qty"><bdi class="num">${it.g}</bdi><small>جم</small></span></div>`;
+  const itemRow = (it, mid) => `<div class="item"><span class="food-ic">${esc(it.name.trim()[0])}</span><div><b>${esc(it.name)}</b>${it.kcal ? `<small><bdi class="num">${it.kcal}</bdi> سعر · <bdi class="num">${it.p}</bdi> بروتين</small>` : ''}${rawTxt(it)}${it.swapped ? `<div class="swapped">بدل ${esc(it.base)}</div>` : ''}${it.adj ? `<div class="swapped">${it.adj > 0 ? '+' : ''}${it.adj} جم من تعديل الكابتن</div>` : ''}</div>${it.drinkCut ? `<div class="swapped">−${it.drinkCut} جم يوم التمرين (راحت للمشروب)</div>` : ''}${((DIET.meals.find(x => x.id === mid) || { items: [] }).items.find(x => x.id === it.id) || {}).alts?.length ? `<button class="mini" data-fs="${it.id}" aria-label="بدّل">${ICON.swap}</button>` : ''}<span class="qty"><bdi class="num">${it.g}</bdi><small>${it.unit || 'جم'}</small></span></div>`;
   el.innerHTML = `<div class="topbar"><h1>النظام الغذائي</h1><button class="iconbtn" id="dInfo" aria-label="معلومات">${ICON.info}</button></div>
   <div class="quick" style="padding:0 0 12px">${week.map(d => `<button data-fd="${d}" style="${d === t ? 'background:var(--red);color:#fff;border-color:var(--red)' : ''};height:auto;padding:8px 12px;line-height:1.3"><span style="display:block;font-size:13px">${d === td ? 'النهارده' : d === addDays(td, -1) ? 'امبارح' : AR_DAYS[parseISO(d).getDay()]}</span><small style="font-size:11px;opacity:.8">${tag(d)}</small></button>`).join('')}</div>
   ${future ? `<p class="muted small" style="margin:0 4px 10px">ده أكل ${nice(t)} – هتعلّم عليه يومها.</p>` : ''}
@@ -1777,7 +1787,7 @@ function renderFood(el) {
     ${m.special ? m.options.map(o => `<button class="item" style="width:100%;text-align:start" data-opt="${o.id}"><span class="food-ic" style="${m.pick === o.id ? 'background:var(--red);color:#fff' : ''}">${m.pick === o.id ? '✓' : ''}</span><div><b>${esc(o.name)}</b><small>${esc(o.desc)}</small><br><small><span class="num">${o.id === 'box' ? m.boxItems.reduce((a, x) => a + x.kcal, 0) : o.kcal}</span> سعر · <span class="num">${o.p}</span> جم بروتين</small></div></button>`).join('')
       : m.items.map(it => itemRow(it, m.id)).join('')}
     <div class="note"><span class="i">i</span><span class="lbl">ملاحظة</span><span>${esc(m.note)}</span></div>
-    ${future ? '' : `<button class="link small" data-rcfor="${m.id}" style="display:block;margin:0 16px 14px;line-height:1.6">📖 وصفة تانية بنفس السعرات</button>`}</div>`).join('')}
+    ${future || m.drink ? '' : `<button class="link small" data-rcfor="${m.id}" style="display:block;margin:0 16px 14px;line-height:1.6">📖 وصفة تانية بنفس السعرات</button>`}</div>`).join('')}
   ${(() => { const ex = (S.days[t] || {}).extras || []; const tot = extraOf(t); return `<div class="card mt"><div class="meal-h"><div><h3>أكل زيادة</h3><small>حلو، مشروب، سناك، عزومة · ${tot ? `<span class="num">${tot}</span> سعر النهارده` : 'مفيش لسه'}</small></div><button class="sq red" id="exAdd" aria-label="ضيف">${ICON.plus}</button></div>
     ${ex.map((e, i) => `<div class="item"><span class="food-ic">${esc(e.name.trim()[0])}</span><div><b>${esc(e.name)}</b><small><span class="num">${e.kcal}</span> سعر</small></div><button class="mini del" data-exdel="${i}" aria-label="مسح">${ICON.trash}</button></div>`).join('')}
     ${!ex.length ? '<p class="muted small" style="margin:0;padding:12px 16px">اضغط + واختار اللي أكلته من القايمة – السعرات محسوبة جاهزة.</p>' : ''}</div>`; })()}`;
@@ -1788,7 +1798,7 @@ function renderFood(el) {
   el.querySelectorAll('[data-rcfor]').forEach(b => b.onclick = () => recipesSheet(b.dataset.rcfor));
   el.querySelectorAll('[data-rcm]').forEach(b => b.onclick = () => { const x = (S.days[t] || {}).recipes || {}; const rr = x[b.dataset.rcm]; const r = rr && allRecipes().find(z => z.id === rr.id); if (r) recipeSheet(r, b.dataset.rcm); });
   el.querySelectorAll('[data-rcx]').forEach(b => b.onclick = () => { delete S.days[t].recipes[b.dataset.rcx]; save(); render(); });
-  el.querySelectorAll('[data-eat]').forEach(b => b.onclick = () => { const d = day(t); d.meals = d.meals || {}; d.meals[b.dataset.eat] = !d.meals[b.dataset.eat]; save(); render(); });
+  el.querySelectorAll('[data-eat]').forEach(b => b.onclick = () => { const d = day(t); d.meals = d.meals || {}; d.meals[b.dataset.eat] = !d.meals[b.dataset.eat]; if (b.dataset.eat === 'drink' && d.meals.drink) d.creatine = true; save(); render(); });
   el.querySelectorAll('[data-opt]').forEach(b => b.onclick = () => { if (future) { toast('اختار يومها بعد ما تاكل'); return; } const d = day(t); d.choice = b.dataset.opt; d.meals = d.meals || {}; d.meals.m3 = true; save(); render(); });
   el.querySelectorAll('[data-fs]').forEach(b => b.onclick = () => foodSwapSheet(b.dataset.fs));
   $('#exAdd').onclick = () => future ? toast('سجّل الأكل الزيادة يومها') : extrasSheet(t);
