@@ -959,27 +959,14 @@ function settingsTab() {
     <button class="btn ghost block sm mt" id="fwGo">🔬 جيب ملف نظام الساعة (فحص بس)</button>
     <p class="muted small" style="line-height:1.8;margin-top:6px">بيجيب الملف من سيرفر الشركة ويبعته للكابتن يفحصه. مش بيركّب ولا بيغيّر أي حاجة في الساعة.</p>`;
 }
-/* تجربة: فتح وضع التمرين على الساعة من الموبايل (أوامر غير موثّقة – بنجرّب) */
-const SPORT_TRIES = [
-  ['ESS:8,0,0', 'ESS نوع عام'],
-  ['ESS:8,0,60', 'ESS بمدة'],
-  ['ESS:13,0,0', 'ESS نوع 13'],
-  ['ESS:1,0,0', 'ESS نوع 1'],
-  ['JMP:4', 'JMP شاشة 4'],
-  ['JMP:3', 'JMP شاشة 3'],
-  ['JMP:6', 'JMP شاشة 6']
-];
-async function sportTryOpen(status) {
+/* تجربة: فتح وضع التمرين بالتنقل بين شاشات الساعة (JMP) – واحدة واحدة */
+let jmpN = 0;
+async function jmpTry(n, status) {
   if (!WD) { toast('ده شغال في الأندرويد بس'); return; }
-  for (let i = 0; i < SPORT_TRIES.length; i++) {
-    const [cmd, label] = SPORT_TRIES[i];
-    status(`بجرّب (${i + 1}/${SPORT_TRIES.length}): ${label}… بص على الساعة`);
-    try { await WD.atRaw({ cmd }); } catch (e) { }
-    await new Promise(r => setTimeout(r, 4500));
-  }
-  status('خلصت التجارب. أنهي واحد فتح وضع التمرين؟ قولّي الرقم.');
+  try { await WD.atRaw({ cmd: 'JMP:' + n }); status(`دلوقتي بعت شاشة رقم ${n} — بص على الساعة: إيه اللي ظهر؟`); }
+  catch (e) { status('مشكلة: ' + (e.message || e)); }
 }
-async function sportStop() { if (WD) { try { await WD.atRaw({ cmd: 'ESS:8,3,0' }); } catch (e) { } try { await WD.atRaw({ cmd: 'ESS:13,3,0' }); } catch (e) { } toast('بعت أمر الإقفال'); } }
+async function sportStop() { if (WD) { for (const c of ['ESS:8,3,0', 'ESS:13,3,0']) { try { await WD.atRaw({ cmd: c }); } catch (e) { } } toast('بعت أمر الإقفال'); } }
 
 function dataTab() {
   const W = S.watch || {}, t = W.today || {}, d0 = today(), h = S.health[d0] || {};
@@ -994,10 +981,10 @@ function dataTab() {
       <p class="small" style="margin:6px 0 0;line-height:1.9">عميق <b>${lastNight.deep ?? '—'}</b> د · خفيف <b>${lastNight.light ?? '—'}</b> د · أحلام <b>${lastNight.rem ?? '—'}</b> د · صاحي <b>${lastNight.awake ?? '—'}</b> د</p>` : ''}
     ${hrSvg(W.hr) ? `<div class="section-t">النبض آخر 24 ساعة</div><div class="card pad">${hrSvg(W.hr)}</div>` : ''}
     ${(W.workouts || []).length ? `<div class="section-t">تمارين سجّلتها الساعة</div>${W.workouts.slice(-5).reverse().map(w => `<div class="hrow"><span class="v">${new Date(w.begin * 1000).toLocaleDateString('ar-EG', { weekday: 'short', day: 'numeric', month: 'short' })} · ${Math.round((w.sec || 0) / 60)} د</span><span class="d num">${w.kcal || 0} سعر · نبض ${w.avgHR || '—'}</span></div>`).join('')}` : ''}
-    ${WD ? `<div class="section-t">تجربة: افتح التمرين من الموبايل</div>
-    <p class="muted small" style="line-height:1.8">عايز لما أبدأ التمرين الساعة تفتح وضع "ممارسة التمارين الرياضية" لوحدها. ده أمر مش موثّق، فبنجرّب. اضغط الزرار وبص على الساعة طول التجربة.</p>
-    <div id="spMsg" class="muted small mt"></div>
-    <button class="btn red block mt sm" id="spGo">🧪 جرّب تفتح التمرين على الساعة</button>
+    ${WD ? `<div class="section-t">تجربة: دوّر على شاشة التمرين</div>
+    <p class="muted small" style="line-height:1.8">كل ضغطة بتنقل الساعة لشاشة. اضغط، بص على الساعة، وقولّي الرقم اللي فتح قايمة التمرين أو "ممارسة التمارين الرياضية".</p>
+    <div id="spMsg" class="muted small mt" style="font-weight:600"></div>
+    <div class="grid2 mt"><button class="btn ghost sm" id="spPrev">⟵ قبل</button><button class="btn red sm" id="spNext">الشاشة اللي بعدها ⟶</button></div>
     <button class="btn ghost block mt sm" id="spStop">أقفل التمرين على الساعة</button>` : ''}
     <p class="muted small mt" style="line-height:1.8">التطبيق بيقرا من الساعة لوحده كل ما تفتحه (كل 45 دقيقة بالكتير).</p>`;
 }
@@ -1135,7 +1122,9 @@ function watchPage() {
       if (ok) { toast('اتزامنت ✓'); closeSheet(); render(); watchDirectSheet(); } else { b.disabled = false; b.textContent = 'مزامنة'; }
     };
     const fd = $('#wdFind', p); if (fd) fd.onclick = async () => { try { await WD.find({ log: false }); toast('الساعة بتهزّ دلوقتي 📳'); } catch (e) { toast(String(e.message || e)); } };
-    const sg = $('#spGo', p); if (sg) sg.onclick = async () => { sg.disabled = true; await sportTryOpen(t => { const m = $('#spMsg', p); if (m) m.textContent = t; }); sg.disabled = false; };
+    const spMsg = () => $('#spMsg', p);
+    const spN = $('#spNext', p); if (spN) spN.onclick = async () => { await jmpTry(jmpN, t => { if (spMsg()) spMsg().textContent = t; }); jmpN++; };
+    const spP = $('#spPrev', p); if (spP) spP.onclick = async () => { jmpN = Math.max(0, jmpN - 1); await jmpTry(jmpN, t => { if (spMsg()) spMsg().textContent = t; }); };
     const sp = $('#spStop', p); if (sp) sp.onclick = () => sportStop();
     const lg = $('#wdLog', p); if (lg) lg.onclick = async () => { let l = ''; try { l = (await WD.getLog()).log; } catch (e) { } copyText(`ERR: ${S.settings.wdLastErr || ''}\nCFG: ${JSON.stringify(wCfg && Object.fromEntries(Object.entries(wCfg).map(([k, v]) => [k, v && b2hx(v.raw)])))}\n${S.settings.wdLastLog || ''}\n--- link ---\n${l}`); };
     // الإشعارات
