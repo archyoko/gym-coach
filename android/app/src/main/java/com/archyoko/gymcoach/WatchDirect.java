@@ -177,6 +177,53 @@ public class WatchDirect extends Plugin {
 
     @PluginMethod public void getLog(PluginCall call) { call.resolve(new JSObject().put("log", WatchLink.get(getContext()).takeLog())); }
 
+
+    // ---------------- أوامر خام (الإعدادات بتتحسب في JS) ----------------
+    static byte[] unhex(String h) { byte[] b = new byte[h.length() / 2]; for (int i = 0; i < b.length; i++) b[i] = (byte) Integer.parseInt(h.substring(i * 2, i * 2 + 2), 16); return b; }
+
+    /** يقرا أكتر من أمر 02xx مرة واحدة: {cmds:["0203","0205"]} → {"8203":"hex",...} */
+    @PluginMethod public void readRaw(PluginCall call) {
+        if (!btOk(call, "btRaw")) return;
+        doReadRaw(call);
+    }
+    @PermissionCallback private void btRaw(PluginCall call) { if (getPermissionState("bt") != PermissionState.GRANTED) { call.reject("محتاج إذن الأجهزة القريبة"); return; } doReadRaw(call); }
+    private void doReadRaw(PluginCall call) {
+        WatchLink w = WatchLink.get(getContext());
+        JSArray cmds = call.getArray("cmds", new JSArray());
+        JSObject res = new JSObject();
+        int n = cmds.length();
+        if (n == 0) { call.resolve(res); return; }
+        final int[] left = {n};
+        for (int i = 0; i < n; i++) {
+            String c = cmds.optString(i);
+            if (c.startsWith("AT:")) {
+                String cmd = c.substring(3); String wait = cmd.replaceAll("[?:].*", "");
+                w.at(cmd, cmd, wait, (op, e) -> { res.put(c, e != null ? "ERR " + e : op.at); if (--left[0] == 0) call.resolve(res); });
+            } else {
+                int a = Integer.parseInt(c.substring(0, 2), 16), b = Integer.parseInt(c.substring(2, 4), 16);
+                w.read(c, a, b, 0, 0, (op, e) -> { res.put(c, e != null ? "ERR " + e : hex(op.big)); if (--left[0] == 0) call.resolve(res); });
+            }
+        }
+    }
+
+    /** يبعت بيانات لأمر 03xx: {cmd:"0303", hex:"..."} */
+    @PluginMethod public void sendRaw(PluginCall call) {
+        String c = call.getString("cmd", ""), hx = call.getString("hex", "");
+        if (c.length() != 4 || hx.isEmpty() || hx.length() % 2 != 0) { call.reject("bad"); return; }
+        if (!c.startsWith("03") && !c.startsWith("04")) { call.reject("مسموح بس بالإعدادات"); return; }
+        int a = Integer.parseInt(c.substring(0, 2), 16), b = Integer.parseInt(c.substring(2, 4), 16);
+        WatchLink.get(getContext()).send(c, a, b, unhex(hx), (op, e) -> { if (e != null) call.reject(e); else call.resolve(new JSObject().put("ok", true).put("reply", op.big == null ? "" : hex(op.big))); });
+    }
+
+    /** أمر AT للإعدادات: {cmd:"SUT:123"} */
+    @PluginMethod public void atRaw(PluginCall call) {
+        String cmd = call.getString("cmd", "");
+        // ممنوع أوامر الربط والتحديث وإعادة الضبط
+        String k = cmd.length() >= 3 ? cmd.substring(0, 3) : cmd;
+        if (k.equals("BDC") || k.equals("BDQ") || k.equals("SUM") || k.equals("RST") || k.equals("RES") || k.equals("OFF") || k.equals("NRS")) { call.reject("ممنوع"); return; }
+        WatchLink.get(getContext()).at(k, cmd, k, (op, e) -> { if (e != null) call.reject(e); else call.resolve(new JSObject().put("reply", op.at)); });
+    }
+
     // ---------------- قراءة البيانات ----------------
     static void parseBig(String cmd, byte[] b, JSObject result) throws Exception {
         switch (cmd) {

@@ -513,3 +513,8 @@ button, .btn { line-height: 1.35; }
 
 .player, .rest { background: #17171b; }
 .btn:focus-visible, .sq:focus-visible, .row:focus-visible, #tabbar button:focus-visible, .chip:focus-visible, .dchip:focus-visible, .drow:focus-visible, .seg button:focus-visible { outline: 2.5px solid #3d7dff; outline-offset: 2px; }
+/* صفحة الساعة */
+.wtog { border: 1px solid var(--line); border-radius: 20px; padding: 7px 14px; font-weight: 600; font-size: 13px; color: var(--ink2); background: #fff; min-width: 78px; }
+.wtog.on { background: var(--red); color: #fff; border-color: var(--red); }
+[data-ws] label { display: block; color: var(--ink2); }
+[data-ws] .inp { height: 44px; font-size: 16px; margin-top: 4px; padding: 0 12px; }

@@ -649,48 +649,95 @@ function stagesBar(st) {
     <div class="muted small" style="display:flex;gap:10px;flex-wrap:wrap"><span style="color:#5b2fa0">■ عميق</span><span style="color:#a98be0">■ خفيف</span><span style="color:#3d9bff">■ أحلام</span><span style="color:#ffb020">■ صاحي</span></div>`;
 }
 const WD_SOON = [
-  ['⭐', 'الأرقام المفضلة على الساعة', 'تختار أسماء تتحط في الساعة'],
-  ['⚙️', 'إعدادات الساعة', 'منبّه، تذكير الحركة والمية، عدم الإزعاج، رفع الإيد'],
-  ['⌚', 'شكل الساعة', 'تغيّر بين الأشكال اللي جوه الساعة، وبعدين صورة من عندك'],
-  ['🌤️', 'الطقس والمزيكا والكاميرا', '']
+  ['⌚', 'شكل الساعة', 'صورة من عندك كخلفية للساعة'],
+  ['⏰', 'المنبّه', 'تظبطه من التطبيق'],
+  ['⭐', 'الأرقام المفضلة', 'أسماء تتحط في الساعة'],
+  ['🌤️', 'الطقس والمزيكا', '']
 ];
 const FWD_APPS = [['com.whatsapp', 'واتساب'], ['com.facebook.orca', 'ماسنجر'], ['com.facebook.katana', 'فيسبوك'], ['com.instagram.android', 'انستجرام'], ['com.google.android.gm', 'Gmail'], ['org.telegram.messenger', 'تيليجرام'], ['com.google.android.apps.messaging', 'الرسايل (SMS)'], ['com.microsoft.office.outlook', 'Outlook'], ['com.linkedin.android', 'LinkedIn']];
 const fwdDefault = () => ({ on: true, calls: true, self: true, known: true, others: false, apps: {} });
-async function watchDirectSheet() {
-  let st = null;
-  if (WD) { try { st = await WD.status(); } catch (e) { st = null; } }
-  watchPage(st);
+let wTab = 'data', wSt = null, wCfg = null, wCfgErr = '';
+async function watchDirectSheet(tab) {
+  if (tab) wTab = tab;
+  wSt = null;
+  if (WD) { try { wSt = await WD.status(); } catch (e) { wSt = null; } }
+  watchPage();
 }
-function fwdBlock(st) {
-  if (!st) return '';
-  let c = {}; try { c = JSON.parse(st.fwd || '{}'); } catch (e) { }
-  if (c.on == null) c = fwdDefault();
-  const tg = (k, label, on, sub) => `<button class="hrow" data-fw="${k}" style="width:100%;border:0;background:none;text-align:inherit"><span class="v">${label}${sub ? `<small>${sub}</small>` : ''}</span><span class="d"><b class="${on ? 'up' : 'muted'}">${on ? '✓ شغال' : 'مقفول'}</b></span></button>`;
-  const appOn = pk => c.apps && pk in c.apps ? !!c.apps[pk] : c.known !== false;
-  return `<div class="section-t">الإشعارات والمكالمات على الساعة</div>
-    ${!st.notifAccess ? `<div class="note"><span class="i">1</span><span>اضغط الزرار ← هتفتح صفحة ← شغّل <b>Lifestyle</b> ← وافق. (لو قالك "إعدادات مقيدة" اعمل نفس خطوة الساعة القديمة: معلومات التطبيق ← ⋮ ← السماح بالإعدادات المقيدة)</span></div>
-      <button class="btn red block mt sm" id="fwAcc">اسمح لـ Lifestyle يقرا الإشعارات</button>` : `
-    ${tg('on', 'توصيل الإشعارات للساعة', c.on)}
-    ${c.on ? `${tg('calls', '📞 المكالمات', c.calls !== false, 'اسم المتصل يظهر والساعة تهزّ')}
-      ${tg('self', '💪 تذكيرات Lifestyle', c.self !== false, 'الراحة بين السِتات، الكرياتين، المية، النوم، رسالة الكابتن')}
-      ${FWD_APPS.map(([pk, n]) => tg('app:' + pk, n, appOn(pk))).join('')}
-      ${tg('others', 'أي تطبيق تاني', !!c.others)}
-      ${c.calls !== false && !st.callPerm ? `<div class="note mt"><span class="i">📞</span><span>عشان المكالمات تظهر باسم المتصل: اضغط الزرار ← وافق على كل الأذونات (المكالمات، سجل المكالمات، جهات الاتصال).</span></div><button class="btn red block sm mt" id="fwCall">اسمح بالمكالمات</button>` : ''}
-      <button class="btn ghost block sm mt" id="fwTest">ابعت رسالة تجربة للساعة</button>
-      <p class="muted small mt" style="line-height:1.8">⚠️ عشان الرسايل متوصلش مرتين: افتح Zepp Active ← الإشعارات ← اقفلها هناك.</p>` : ''}`}`;
+/* ---------- إعدادات الساعة: قراءة/كتابة البايتات ---------- */
+const hx2b = h => { const b = []; for (let i = 0; i + 1 < (h || '').length; i += 2) b.push(parseInt(h.substr(i, 2), 16)); return b; };
+const b2hx = b => b.map(x => (x & 255).toString(16).padStart(2, '0')).join('').toUpperCase();
+const rd = (b, o, n) => { let v = 0; for (let i = 0; i < n; i++) v += (b[o + i] || 0) * 2 ** (8 * i); return v; };
+const wr = (b, o, n, v) => { for (let i = 0; i < n; i++) b[o + i] = Math.floor(v / 2 ** (8 * i)) & 255; };
+const m2t = m => `${pad2(Math.floor((m || 0) / 60) % 24)}:${pad2((m || 0) % 60)}`;
+const t2m = t => { const [h, m] = String(t || '0:0').split(':').map(Number); return (h || 0) * 60 + (m || 0); };
+const WSET = {
+  sed: { get: '0203', set: '0303', len: 12, name: 'تذكير الحركة', sub: 'لو قعدت كتير الساعة تهزّ وتقولك قوم',
+    parse: b => ({ on: b[0] === 1, from: rd(b, 4, 2), to: rd(b, 6, 2), every: rd(b, 8, 2), steps: rd(b, 10, 2) }),
+    build: (b, v) => { b[0] = v.on ? 1 : 0; wr(b, 4, 2, v.from); wr(b, 6, 2, v.to); wr(b, 8, 2, v.every); wr(b, 10, 2, v.steps); } },
+  water: { get: '0205', set: '0305', len: 8, name: 'تذكير المية', sub: 'كل شوية تفكّرك تشرب',
+    parse: b => ({ on: b[6] === 1, from: rd(b, 0, 2), to: rd(b, 2, 2), week: rd(b, 4, 2) }),
+    build: (b, v) => { wr(b, 0, 2, v.from); wr(b, 2, 2, v.to); wr(b, 4, 2, v.week || 127); b[6] = v.on ? 1 : 0; } },
+  dnd: { get: '0206', set: '0306', len: 8, name: 'عدم الإزعاج', sub: 'مفيش هزّ ولا إشعارات في الوقت ده',
+    parse: b => ({ on: b[4] === 1, from: rd(b, 0, 2), to: rd(b, 2, 2) }),
+    build: (b, v) => { wr(b, 0, 2, v.from); wr(b, 2, 2, v.to); b[4] = v.on ? 1 : 0; } },
+  lift: { get: '0208', set: '0308', len: 8, name: 'رفع الإيد ينوّر الشاشة', sub: '',
+    parse: b => ({ on: b[4] === 1, from: rd(b, 0, 2), to: rd(b, 2, 2) }),
+    build: (b, v) => { wr(b, 0, 2, v.from); wr(b, 2, 2, v.to); b[4] = v.on ? 1 : 0; } },
+  goal: { get: '0209', set: '0309', len: 40, name: 'هدف اليوم على الساعة', sub: '',
+    parse: b => ({ steps: rd(b, 8, 4), kcal: rd(b, 12, 4), dist: rd(b, 16, 4), exMin: rd(b, 20, 4) }),
+    build: (b, v) => { b[0] = 1; wr(b, 8, 4, v.steps); } }
+};
+async function wCfgLoad() {
+  wCfgErr = '';
+  try {
+    const r = await WD.readRaw({ cmds: Object.values(WSET).map(x => x.get) });
+    wCfg = {};
+    for (const [k, d] of Object.entries(WSET)) {
+      const h = r[d.get];
+      if (!h || h.startsWith('ERR')) { wCfg[k] = null; continue; }
+      const b = hx2b(h); wCfg[k] = { raw: b, v: d.parse(b) };
+    }
+  } catch (e) { wCfgErr = String(e.message || e); wCfg = null; }
 }
-function watchPage(st) {
+async function wCfgSave(k, v) {
+  const d = WSET[k], cur = wCfg && wCfg[k];
+  const b = (cur ? cur.raw.slice() : []).concat(Array(Math.max(0, d.len - (cur ? cur.raw.length : 0))).fill(0)).slice(0, Math.max(d.len, cur ? cur.raw.length : 0));
+  d.build(b, v);
+  await WD.sendRaw({ cmd: d.set, hex: b2hx(b) });
+  wCfg[k] = { raw: b, v: d.parse(b) };
+}
+/* برنامج محمد: صحيان ~6:30، شغل 8–5، نوم ~11:30 */
+const MY_WATCH = {
+  goal: { steps: 8000 },
+  sed: { on: true, from: 9 * 60, to: 21 * 60, every: 60, steps: 0 },
+  water: { on: true, from: 8 * 60, to: 21 * 60, week: 127 },
+  dnd: { on: true, from: 23 * 60 + 30, to: 6 * 60 + 30 },
+  lift: { on: true, from: 6 * 60, to: 23 * 60 + 30 }
+};
+function settingsTab() {
+  if (!WD) return '<p class="muted">الإعدادات بتشتغل في تطبيق الأندرويد بس.</p>';
+  if (!wCfg) return wCfgErr ? `<div class="verdict warn"><h3>مقدرتش أقرا إعدادات الساعة</h3><p>${esc(wCfgErr)}</p></div><button class="btn red block mt" id="wsLoad">جرّب تاني</button>` : '<p class="muted" style="text-align:center;padding:30px 0">بيقرا إعدادات الساعة…</p>';
+  const row = (k, inner) => { const d = WSET[k], c = wCfg[k]; if (!c) return ''; return `<div class="card pad mt" data-ws="${k}"><div style="display:flex;align-items:center;gap:10px"><div style="flex:1"><b>${d.name}</b>${d.sub ? `<div class="muted small">${d.sub}</div>` : ''}</div>
+      ${'on' in c.v ? `<button class="wtog ${c.v.on ? 'on' : ''}" data-on>${c.v.on ? '✓ شغال' : 'مقفول'}</button>` : ''}</div>${inner(c.v)}</div>`; };
+  const range = v => `<div class="grid2 mt"><label class="small">من<input type="time" data-f="from" value="${m2t(v.from)}" class="inp"></label><label class="small">لـ<input type="time" data-f="to" value="${m2t(v.to)}" class="inp"></label></div>`;
+  return `<button class="btn red block" id="wsMine">⚡ ظبّط الساعة على برنامجك</button>
+    <p class="muted small" style="line-height:1.8;margin:8px 0 0">هدف 8,000 خطوة، تذكير حركة كل ساعة (9 الصبح لـ 9 بالليل)، تذكير مية، عدم إزعاج من 11:30 بالليل لـ 6:30 الصبح.</p>
+    ${row('goal', v => `<div class="grid2 mt"><label class="small">خطوات<input type="number" inputmode="numeric" data-f="steps" value="${v.steps || 8000}" class="inp"></label><span></span></div>`)}
+    ${row('sed', v => range(v) + `<div class="grid2 mt"><label class="small">كل (دقيقة)<input type="number" inputmode="numeric" data-f="every" value="${v.every || 60}" class="inp"></label><span></span></div>`)}
+    ${row('water', range)}
+    ${row('dnd', range)}
+    ${row('lift', range)}
+    <button class="btn ghost block mt" id="wsSave">احفظ التعديلات في الساعة</button>
+    <div class="section-t">الساعة</div>
+    <div class="grid2"><button class="btn ghost sm" id="wdFind">📳 دوّر على الساعة</button><button class="btn ghost sm" id="wsLoad">🔄 اقرا الإعدادات تاني</button></div>
+    <div class="section-t">جاي في التحديثات الجاية</div>
+    ${WD_SOON.map(x => `<div class="hrow"><span class="v">${x[0]} ${x[1]}${x[2] ? `<small>${x[2]}</small>` : ''}</span><span class="d muted small">قريب</span></div>`).join('')}
+    <button class="btn ghost block sm mt" id="wdLog">انسخ السجل (لو فيه مشكلة ابعتهولي)</button>`;
+}
+function dataTab() {
   const W = S.watch || {}, t = W.today || {}, d0 = today(), h = S.health[d0] || {};
-  const lastNight = S.health[d0] && S.health[d0].zsq, stg = (W.stages || {})[d0];
-  const ago = W.at ? Math.round((Date.now() - W.at) / 6e4) : null;
-  openSheet(sheetHead('الساعة', W.name ? esc(W.name) : 'Amazfit Pop 3R') + `
-    <div class="card pad" style="display:flex;align-items:center;gap:14px">
-      <div style="font-size:34px">⌚</div>
-      <div style="flex:1"><b>${W.battery != null ? `البطارية ${W.battery}%${W.charging ? ' ⚡' : ''}` : 'لسه مقريناش الساعة'}</b>
-        <div class="muted small">${ago == null ? 'اضغط مزامنة' : ago < 1 ? 'اتزامنت دلوقتي' : ago < 60 ? `آخر مزامنة من ${ago} دقيقة` : `آخر مزامنة ${new Date(W.at).toLocaleString('ar-EG', { weekday: 'short', hour: 'numeric', minute: '2-digit' })}`}</div></div>
-    </div>
-    <div class="grid2 mt"><button class="btn red sm" id="wdSync">مزامنة دلوقتي</button><button class="btn ghost sm" id="wdFind">دوّر على الساعة</button></div>
-    <div class="section-t">النهارده</div>
+  const lastNight = h.zsq, stg = (W.stages || {})[d0];
+  return `<div class="section-t">النهارده</div>
     <div class="hrow"><span class="v">خطوات</span><span class="d num"><b>${fmt(h.zsteps)}</b> / 8,000</span></div>
     <div class="hrow"><span class="v">سعرات الحركة</span><span class="d num">${fmt(h.zactive)}</span></div>
     ${t.hr ? `<div class="hrow"><span class="v">النبض دلوقتي</span><span class="d num">${t.hr} ❤️</span></div>` : ''}
@@ -700,25 +747,53 @@ function watchPage(st) {
       <p class="small" style="margin:6px 0 0;line-height:1.9">عميق <b>${lastNight.deep ?? '—'}</b> د · خفيف <b>${lastNight.light ?? '—'}</b> د · أحلام <b>${lastNight.rem ?? '—'}</b> د · صاحي <b>${lastNight.awake ?? '—'}</b> د</p>` : ''}
     ${hrSvg(W.hr) ? `<div class="section-t">النبض آخر 24 ساعة</div><div class="card pad">${hrSvg(W.hr)}</div>` : ''}
     ${(W.workouts || []).length ? `<div class="section-t">تمارين سجّلتها الساعة</div>${W.workouts.slice(-5).reverse().map(w => `<div class="hrow"><span class="v">${new Date(w.begin * 1000).toLocaleDateString('ar-EG', { weekday: 'short', day: 'numeric', month: 'short' })} · ${Math.round((w.sec || 0) / 60)} د</span><span class="d num">${w.kcal || 0} سعر · نبض ${w.avgHR || '—'}</span></div>`).join('')}` : ''}
-    ${fwdBlock(st)}
-    <div class="section-t">جاي في التحديثات الجاية</div>
-    ${WD_SOON.map(x => `<div class="hrow"><span class="v">${x[0]} ${x[1]}${x[2] ? `<small>${x[2]}</small>` : ''}</span><span class="d muted small">قريب</span></div>`).join('')}
-    <p class="muted small mt" style="line-height:1.8">التطبيق بيقرا من الساعة لوحده كل ما تفتحه (كل 45 دقيقة بالكتير). Zepp Active يفضل متسطّب دلوقتي لحد ما نخلّص الإشعارات والمكالمات.</p>
-    <button class="btn ghost block sm" id="wdLog">انسخ السجل (لو فيه مشكلة ابعتهولي)</button>`, p => {
+    <p class="muted small mt" style="line-height:1.8">التطبيق بيقرا من الساعة لوحده كل ما تفتحه (كل 45 دقيقة بالكتير).</p>`;
+}
+function notifTab(st) {
+  if (!st) return '<p class="muted">الإشعارات بتشتغل في تطبيق الأندرويد بس.</p>';
+  let c = {}; try { c = JSON.parse(st.fwd || '{}'); } catch (e) { }
+  if (c.on == null) c = fwdDefault();
+  const tg = (k, label, on, sub) => `<button class="hrow" data-fw="${k}" style="width:100%;border:0;background:none;text-align:inherit"><span class="v">${label}${sub ? `<small>${sub}</small>` : ''}</span><span class="d"><b class="${on ? 'up' : 'muted'}">${on ? '✓ شغال' : 'مقفول'}</b></span></button>`;
+  const appOn = pk => c.apps && pk in c.apps ? !!c.apps[pk] : c.known !== false;
+  if (!st.notifAccess) return `<div class="note"><span class="i">1</span><span>اضغط الزرار ← هتفتح صفحة ← شغّل <b>Lifestyle</b> ← وافق. (لو قالك "إعدادات مقيدة": معلومات التطبيق ← ⋮ ← السماح بالإعدادات المقيدة)</span></div>
+      <button class="btn red block mt sm" id="fwAcc">اسمح لـ Lifestyle يقرا الإشعارات</button>`;
+  return `${tg('on', 'توصيل الإشعارات للساعة', c.on)}
+    ${c.on ? `<div class="section-t">المكالمات والكابتن</div>
+      ${tg('calls', '📞 المكالمات', c.calls !== false, 'اسم المتصل يظهر والساعة تهزّ')}
+      ${c.calls !== false && !st.callPerm ? `<div class="note mt"><span class="i">📞</span><span>عشان المكالمات تظهر باسم المتصل: اضغط الزرار ← وافق على كل الأذونات.</span></div><button class="btn red block sm mt" id="fwCall">اسمح بالمكالمات</button>` : ''}
+      ${tg('self', '💪 تذكيرات Lifestyle', c.self !== false, 'الراحة بين السِتات، الكرياتين، المية، النوم، رسالة الكابتن')}
+      <div class="section-t">التطبيقات</div>
+      ${FWD_APPS.map(([pk, n]) => tg('app:' + pk, n, appOn(pk))).join('')}
+      ${tg('others', 'أي تطبيق تاني', !!c.others)}
+      <button class="btn ghost block sm mt" id="fwTest">ابعت رسالة تجربة للساعة</button>
+      <p class="muted small mt" style="line-height:1.8">⚠️ عشان الرسايل متوصلش مرتين: اقفل الإشعارات من Zepp Active.</p>` : ''}`;
+}
+function watchPage() {
+  const W = S.watch || {}, st = wSt;
+  const ago = W.at ? Math.round((Date.now() - W.at) / 6e4) : null;
+  const tabs = [['data', 'البيانات'], ['notif', 'الإشعارات'], ['set', 'الإعدادات']];
+  openSheet(sheetHead('الساعة', W.name ? esc(W.name) : 'Amazfit Pop 3R') + `
+    <div class="card pad" style="display:flex;align-items:center;gap:12px">
+      <div style="font-size:30px">⌚</div>
+      <div style="flex:1"><b>${W.battery != null ? `البطارية ${W.battery}%${W.charging ? ' ⚡' : ''}` : 'لسه مقريناش الساعة'}</b>
+        <div class="muted small">${ago == null ? 'اضغط مزامنة' : ago < 1 ? 'اتزامنت دلوقتي' : ago < 60 ? `آخر مزامنة من ${ago} دقيقة` : `آخر مزامنة ${new Date(W.at).toLocaleString('ar-EG', { weekday: 'short', hour: 'numeric', minute: '2-digit' })}`}</div></div>
+      <button class="btn red sm" id="wdSync" style="flex:0 0 auto;width:auto;min-width:0;padding:0 18px;height:40px">مزامنة</button>
+    </div>
+    <div class="seg plain mt" style="margin:12px 0 4px">${tabs.map(([k, n]) => `<button class="${wTab === k ? 'on' : ''}" data-wt="${k}">${n}</button>`).join('')}</div>
+    <div id="wBody">${wTab === 'data' ? dataTab() : wTab === 'notif' ? notifTab(st) : settingsTab()}</div>`, p => {
+    p.querySelectorAll('[data-wt]').forEach(b => b.onclick = () => { wTab = b.dataset.wt; closeSheet(); watchPage(); });
     $('#wdSync', p).onclick = async () => {
       if (!WD) { toast('ده شغال في تطبيق الأندرويد بس'); return; }
-      const b = $('#wdSync', p); b.disabled = true; b.textContent = 'بيقرا الساعة…';
+      const b = $('#wdSync', p); b.disabled = true; b.textContent = '…';
       const ok = await watchSync(true);
-      if (ok) { toast('اتزامنت ✓'); closeSheet(); render(); watchDirectSheet(); } else { b.disabled = false; b.textContent = 'مزامنة دلوقتي'; }
+      if (ok) { toast('اتزامنت ✓'); closeSheet(); render(); watchDirectSheet(); } else { b.disabled = false; b.textContent = 'مزامنة'; }
     };
-    $('#wdFind', p).onclick = async () => {
-      if (!WD) { toast('ده شغال في تطبيق الأندرويد بس'); return; }
-      try { await WD.find({ log: false }); toast('الساعة بتهزّ دلوقتي 📳'); } catch (e) { toast(String(e.message || e)); }
-    };
-    $('#wdLog', p).onclick = async () => { let l = ''; try { l = (await WD.getLog()).log; } catch (e) { } copyText(`ERR: ${S.settings.wdLastErr || ''}\n${S.settings.wdLastLog || ''}\n--- link ---\n${l}`); };
+    const fd = $('#wdFind', p); if (fd) fd.onclick = async () => { try { await WD.find({ log: false }); toast('الساعة بتهزّ دلوقتي 📳'); } catch (e) { toast(String(e.message || e)); } };
+    const lg = $('#wdLog', p); if (lg) lg.onclick = async () => { let l = ''; try { l = (await WD.getLog()).log; } catch (e) { } copyText(`ERR: ${S.settings.wdLastErr || ''}\nCFG: ${JSON.stringify(wCfg && Object.fromEntries(Object.entries(wCfg).map(([k, v]) => [k, v && b2hx(v.raw)])))}\n${S.settings.wdLastLog || ''}\n--- link ---\n${l}`); };
+    // الإشعارات
     const acc = $('#fwAcc', p); if (acc) acc.onclick = () => WD.openNotifAccess();
     const cl = $('#fwCall', p); if (cl) cl.onclick = async () => { try { await WD.askCallPerm(); } catch (e) { } closeSheet(); watchDirectSheet(); };
-    const te = $('#fwTest', p); if (te) te.onclick = async () => { te.disabled = true; te.textContent = 'بيبعت…'; try { await WD.message({ title: 'الكابتن', text: 'أهلاً يا محمد 💪 الساعة بقت مربوطة بـ Lifestyle' }); toast('اتبعتت – بص على الساعة'); } catch (e) { toast(String(e.message || e)); } te.disabled = false; te.textContent = 'ابعت رسالة تجربة للساعة'; };
+    const te = $('#fwTest', p); if (te) te.onclick = async () => { te.disabled = true; te.textContent = 'بيبعت…'; try { await WD.message({ title: 'الكابتن', text: 'أهلاً يا محمد 💪 الساعة مربوطة بـ Lifestyle' }); toast('اتبعتت – بص على الساعة'); } catch (e) { toast(String(e.message || e)); } te.disabled = false; te.textContent = 'ابعت رسالة تجربة للساعة'; };
     p.querySelectorAll('[data-fw]').forEach(b => b.onclick = async () => {
       let c = {}; try { c = JSON.parse(st.fwd || '{}'); } catch (e) { }
       if (c.on == null) c = fwdDefault();
@@ -726,8 +801,23 @@ function watchPage(st) {
       if (k.startsWith('app:')) { const pk = k.slice(4); c.apps = c.apps || {}; const cur = pk in c.apps ? !!c.apps[pk] : c.known !== false; c.apps[pk] = !cur; }
       else c[k] = !(k === 'others' ? !!c[k] : c[k] !== false);
       try { await WD.setForward({ cfg: c }); } catch (e) { }
-      closeSheet(); watchDirectSheet();
+      watchDirectSheet();
     });
+    // الإعدادات
+    if (wTab === 'set' && WD && !wCfg && !wCfgErr) wCfgLoad().then(() => { if (wTab === 'set' && !$('#sheet').hidden) { closeSheet(); watchPage(); } });
+    const ld = $('#wsLoad', p); if (ld) ld.onclick = () => { wCfg = null; wCfgErr = ''; closeSheet(); watchPage(); };
+    p.querySelectorAll('[data-ws] [data-on]').forEach(b => b.onclick = () => { const on = !b.classList.contains('on'); b.classList.toggle('on', on); b.textContent = on ? '✓ شغال' : 'مقفول'; });
+    const collect = () => { const out = {}; p.querySelectorAll('[data-ws]').forEach(card => { const k = card.dataset.ws, v = Object.assign({}, wCfg[k].v); const t = $('[data-on]', card); if (t) v.on = t.classList.contains('on'); card.querySelectorAll('[data-f]').forEach(i => { v[i.dataset.f] = i.type === 'time' ? t2m(i.value) : +i.value || 0; }); out[k] = v; }); return out; };
+    const saveAll = async (vals, btn, label) => {
+      btn.disabled = true; btn.textContent = 'بيكتب في الساعة…';
+      let bad = [];
+      for (const [k, v] of Object.entries(vals)) { if (!wCfg || !wCfg[k]) continue; const old = JSON.stringify(wCfg[k].v); if (JSON.stringify(Object.assign({}, wCfg[k].v, v)) === old) continue; try { await wCfgSave(k, Object.assign({}, wCfg[k].v, v)); } catch (e) { bad.push(WSET[k].name); } }
+      await wCfgLoad();
+      toast(bad.length ? `مقدرتش أغيّر: ${bad.join('، ')}` : 'اتحفظت في الساعة ✓');
+      closeSheet(); watchPage();
+    };
+    const sv = $('#wsSave', p); if (sv) sv.onclick = () => saveAll(collect(), sv);
+    const mn = $('#wsMine', p); if (mn) mn.onclick = () => saveAll(MY_WATCH, mn);
   });
 }
 let LN = null;
