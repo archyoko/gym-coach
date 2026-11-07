@@ -616,25 +616,18 @@ async function zeppFetch() {
   try { await Zepp.fetchNow(); } catch (e) { toast(e.message || 'مقدرتش أفتح Zepp Active'); }
 }
 function zeppSetupSheet() {
-  openSheet(sheetHead('قراءة الساعة أوتوماتيك', 'إعداد مرة واحدة – دقيقة') + `
-    <p style="line-height:1.8">Lifestyle بيقرا الخطوات والسعرات والنوم من Zepp Active، والوزن وتحليل الجسم من OKOK وانت بتتوزن (افتح شاشة <b>التفاصيل</b> بعد الوزن). الخدمة مقفولة على التطبيقين دول بس.</p>
-    <div class="note"><span class="i">1</span><span>اضغط الزرار ده ← هتفتح صفحة معلومات التطبيق ← اضغط <b>⋮</b> فوق ← <b>السماح بالإعدادات المقيدة</b> (Allow restricted settings). لو مش ظاهرة، كمّل للخطوة 2 الأول.</span></div>
+  openSheet(sheetHead('الميزان (OKOK)', 'عشان يقرا وزنك وتحليل جسمك') + `
+    <p style="line-height:1.8">الساعة بقت مربوطة بالتطبيق <b>مباشرة</b>، فمش محتاج Zepp Active خالص — تقدر تلغي تثبيته. الحاجة الوحيدة اللي بتتقرا من بره هي <b>وزنك وتحليل جسمك من ميزان OKOK</b> وانت بتتوزن.</p>
+    <div class="note"><span class="i">1</span><span>اضغط ← معلومات التطبيق ← <b>⋮</b> فوق ← <b>السماح بالإعدادات المقيدة</b>. لو مش ظاهرة كمّل خطوة 2.</span></div>
     <button class="btn ghost block mt sm" id="z1">افتح معلومات التطبيق</button>
-    <div class="note mt"><span class="i">2</span><span>اضغط الزرار ده ← <b>التطبيقات المثبتة</b> (Downloaded apps) ← <b>Lifestyle – قراءة الساعة</b> ← شغّلها ← وافق.</span></div>
+    <div class="note mt"><span class="i">2</span><span>اضغط ← <b>التطبيقات المثبتة</b> ← <b>Lifestyle – قراءة الساعة</b> ← شغّلها ← وافق.</span></div>
     <button class="btn ghost block mt sm" id="z2">افتح إمكانية الوصول</button>
-    <div class="note mt"><span class="i">3</span><span>ارجع هنا واضغط <b>جرّب دلوقتي</b>. هيفتح Zepp Active ويرجعك لوحده.</span></div>
-    <button class="btn red block mt" id="z3">جرّب دلوقتي</button>
-    <div class="section-t">أوتوماتيك كل يوم</div>
-    <p style="line-height:1.8;margin:0">أول ما تفتح قفل الموبايل <b>الصبح</b> (من 5 لـ 12) بيجيب نوم الليلة، وأول ما تفتحه <b>بالليل</b> (بعد 9) بيجيب خطوات وسعرات اليوم كاملة. Zepp Active هيظهر 3–5 ثواني ويقفل لوحده ويرجعك للي كنت فيه.</p>
-    <button class="btn ${zeppState.auto ? 'ghost' : 'red'} block mt sm" id="z5">${zeppState.auto ? '✓ الأوتوماتيك شغال – اضغط تقفله' : 'شغّل الأوتوماتيك'}</button>
-    <p class="muted small mt">حالة الخدمة: ${zeppState.enabled ? '✓ شغالة' : '✗ مش شغالة لسه'}${zeppState.lastRead ? ` · آخر قراءة ${new Date(zeppState.lastRead).toLocaleTimeString('ar-EG', { hour: 'numeric', minute: '2-digit' })}` : ''}</p>
-    ${zeppState.okokRead ? `<p class="muted small">آخر قراءة للميزان: ${new Date(zeppState.okokRead).toLocaleString('ar-EG', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}</p>` : ''}
-    ${zeppState.raw || zeppState.okokRaw ? '<button class="btn ghost block sm" id="z4">انسخ اللي اتقرا (لو الأرقام غلط ابعتهولي)</button>' : ''}`, p => {
+    <div class="note mt"><span class="i">3</span><span>افتح تطبيق <b>OKOK</b> واتوزن، وبعد الوزن افتح شاشة <b>التفاصيل</b>. التطبيق هيقرا الأرقام لوحده.</span></div>
+    <p class="muted small mt">حالة الخدمة: ${zeppState.enabled ? '✓ شغالة' : '✗ مش شغالة لسه'}${zeppState.okokRead ? ` · آخر قراءة للميزان ${new Date(zeppState.okokRead).toLocaleString('ar-EG', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}` : ''}</p>
+    ${zeppState.okokRaw ? '<button class="btn ghost block sm" id="z4">انسخ اللي اتقرا (لو الأرقام غلط ابعتهولي)</button>' : ''}`, p => {
     $('#z1', p).onclick = () => Zepp && Zepp.openAppInfo();
     $('#z2', p).onclick = () => Zepp && Zepp.openSettings();
-    $('#z3', p).onclick = async () => { await zeppPull(); if (!zeppState.enabled) { toast('الخدمة لسه مش شغالة – اعمل خطوة 2'); return; } closeSheet(); zeppFetch(); };
-    const z4 = $('#z4', p); if (z4) z4.onclick = () => copyText('ZEPP:\n' + zeppState.raw + '\n\nOKOK:\n' + zeppState.okokRaw);
-    $('#z5', p).onclick = async () => { try { await Zepp.setAuto({ enabled: !zeppState.auto }); } catch (e) { } await zeppPull(); closeSheet(); zeppSetupSheet(); };
+    const z4 = $('#z4', p); if (z4) z4.onclick = () => copyText('OKOK:\n' + zeppState.okokRaw);
   });
 }
 
@@ -1730,11 +1723,9 @@ document.querySelectorAll('#tabbar button').forEach(b => b.onclick = () => { tab
 function renderSyncLine() {
   const zl = $('#zeppline');
   if (zl && native) {
-    const lr = zeppState.lastRead; const m = lr ? Math.round((Date.now() - lr) / 6e4) : null;
-    zl.innerHTML = zeppState.enabled
-      ? `<span class="dot ${m != null && m < 180 ? 'ok' : ''}"></span><span>الساعة: ${m == null ? 'لسه مفيش قراءة' : m < 1 ? 'اتقرت دلوقتي' : m < 60 ? `اتقرت من ${m} دقيقة` : `اتقرت من ${Math.round(m / 60)} ساعة`}</span><button id="zGo">هات أرقام الساعة</button>`
-      : `<span class="dot bad"></span><span>الساعة مش مربوطة</span><button id="zGo">اربطها</button>`;
-    $('#zGo').onclick = zeppFetch;
+    const W = S.watch || {}, m = W.at ? Math.round((Date.now() - W.at) / 6e4) : null;
+    zl.innerHTML = `<span class="dot ${m != null && m < 180 ? 'ok' : 'bad'}"></span><span>الساعة${W.battery != null ? ` · 🔋 ${W.battery}%` : ''}: ${m == null ? 'لسه مزامنتش' : m < 1 ? 'اتزامنت دلوقتي' : m < 60 ? `من ${m} دقيقة` : `من ${Math.round(m / 60)} ساعة`}</span><button id="zGo">زامن</button>`;
+    $('#zGo').onclick = async () => { const ok = await watchSync(true); if (ok) { toast('اتزامنت ✓'); render(); } };
   }
   const el = $('#syncline'); if (!el) return;
   if (!native) { el.innerHTML = `<span class="dot"></span><span>Health Connect بيشتغل في تطبيق الأندرويد</span>`; return; }
@@ -2576,7 +2567,7 @@ function renderMenu(el) {
   const rows = [
     ['user', 'ملفي وأهدافي', profileSheet, `${S.settings.kcal} سعر`],
     ['heart', 'الساعة', () => watchDirectSheet(), (S.watch || {}).battery != null ? `🔋 ${S.watch.battery}%` : ''],
-    ['heart', 'الميزان وZepp Active', zeppSetupSheet, native ? (zeppState.enabled ? '✓ شغالة' : 'مش شغالة') : ''],
+    ['heart', 'الميزان (OKOK)', zeppSetupSheet, native ? (zeppState.okokRead ? '✓' : 'مش مربوط') : ''],
     ['save', 'المزامنة مع Google Drive', cloudSheet, cloudInfo.linked ? '✓ مربوط' : 'مش مربوط'],
     ['bell', 'الإشعارات', notifSheet, S.settings.notif ? 'شغالة' : 'مقفولة'],
     ['shield', 'الكابتن (المراجعة اليومية)', () => (ghOn() && (S.coach.msgs || []).length ? coachMsgsSheet() : ghSheet()), ghOn() ? (S.settings.ghLast ? '✓ شغالة' : 'مستنية') : 'مش متفعّلة'],
@@ -2675,6 +2666,7 @@ setTimeout(gymCheck, 3000);
 if (UP) setTimeout(() => upCheck(false), 4000);
 if (WD) setTimeout(watchSportCheck, 1200);
 if (WD) setTimeout(() => watchSync(false).then(ok => { if (ok && $('#player').hidden && $('#sheet').hidden) render(); }), 1500);
+if (WD && Zepp && !S.settings.zAutoOff) setTimeout(async () => { try { const st = await Zepp.getData(); if (st.auto !== false) await Zepp.setAuto({ enabled: false }); S.settings.zAutoOff = true; save(); } catch (e) { } }, 6000);
 if (LN) (async () => {
   try { if (S.settings.notif && !S.settings.notifAsked) { S.settings.notifAsked = true; save(); await LN.requestPermissions(); } } catch (e) { }
   scheduleReminders();
