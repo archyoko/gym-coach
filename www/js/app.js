@@ -106,6 +106,7 @@ function mealItems(m) {
     return x;
   });
 }
+/* يوم تمرين؟ (فيه مشروب التمرين – سعراته زيادة على اليوم، محمد اختار كده) */
 /* يوم تمرين؟ (حسب الخطة، أو لو اتمرّن فعلاً اليوم ده) */
 function trainDayOf(d) {
   if (diffDays(d, S.settings.start) < 0) return false;
@@ -118,8 +119,7 @@ function mealsFor(d) {
   const t = dayType(d), train = trainDayOf(d);
   const out = DIET.meals.map(m => {
     let its = mealItems(m);
-    if (train && m.id === 'm2') its = its.map(x => { if (x.id !== 'sweet') return x; const g = Math.max(0, Math.round(x.g * (x.kcal - DRINK_KCAL) / x.kcal / 5) * 5); return Object.assign({}, x, { g, kcal: Math.round(x.kcal * g / x.g), p: Math.round(x.p * g / x.g), drinkCut: x.g - g }); });
-    const base = { id: m.id, title: m.title, time: m.time, where: m.where, note: train && m.id === 'm2' ? m.note + ' يوم التمرين البطاطا أقل – سعراتها راحت لمشروب التمرين.' : m.note, items: its, kcal: its.reduce((a, x) => a + x.kcal, 0), p: its.reduce((a, x) => a + x.p, 0) };
+    const base = { id: m.id, title: m.title, time: m.time, where: m.where, note: m.note, items: its, kcal: its.reduce((a, x) => a + x.kcal, 0), p: its.reduce((a, x) => a + x.p, 0) };
     if (m.id === 'm2' && t === 'mom') { const it2 = its.filter(x => x.id !== 'choc'); return Object.assign(base, { items: it2, kcal: it2.reduce((a, x) => a + x.kcal, 0), p: it2.reduce((a, x) => a + x.p, 0), note: 'النهارده من غير شيكولاتة – سيب مكان لأكل ماما.' }); }
     if (m.id === 'm3' && t !== 'normal') {
       const sp = t === 'mom' ? SPECIAL.mom : SPECIAL.lecture;
