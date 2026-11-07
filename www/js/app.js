@@ -690,7 +690,8 @@ function watchMerge(r) {
   }
   for (const x of r.days || []) {
     if (!x.time) continue;
-    const d = tISO(x.time + 120), h = H(d); // السجل بيبدأ نص ليل نفس اليوم (أحياناً ±ثانية)
+    const d = tISO(x.time - 60), h = H(d); // السجل بيتكتب نص الليل عن اليوم اللي خلص
+    if (d === today()) continue; // النهارده بياخد رقمه الحي من 8102، مش من سجل يوم خلص
     if (x.steps != null) h.zsteps = x.steps;
     if (x.kcal != null) h.zactive = x.kcal;
     if (x.avgHR) h.zhr = x.avgHR;
