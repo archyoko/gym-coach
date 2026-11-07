@@ -371,4 +371,18 @@ public class WatchLink {
 
     /** المكالمة خلصت أو اترد عليها من الموبايل */
     public void callEnded() { at("PCC", "PCC:102", "PCC", null); }
+
+    /** شاشة المزيكا على الساعة = ريموت التمرين (0404). title ≈ 13 حرف عربي */
+    public void musicInfo(String title, String sub, String album, boolean playing, int progress, int total, Done cb) {
+        byte[] p = new byte[162];
+        byte[] t = cut(title == null ? "" : title, 28), s = cut(sub == null ? "" : sub, 28), a = cut(album == null ? "" : album, 28);
+        System.arraycopy(t, 0, p, 0, t.length);
+        System.arraycopy(s, 0, p, 32, s.length);
+        le(p, 64, 2, Math.max(0, total));
+        System.arraycopy(a, 0, p, 66, a.length);
+        p[130] = (byte) (playing ? 1 : 0);
+        le(p, 132, 2, Math.max(0, progress));
+        p[134] = 16; p[135] = 8;
+        send("music", 0x04, 0x04, p, cb);
+    }
 }

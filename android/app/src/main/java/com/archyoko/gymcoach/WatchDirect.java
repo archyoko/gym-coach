@@ -140,6 +140,8 @@ public class WatchDirect extends Plugin {
         r.put("lastOk", WatchLink.get(getContext()).lastOk);
         r.put("callPerm", Build.VERSION.SDK_INT < 28 || getPermissionState("call") == PermissionState.GRANTED);
         r.put("fwd", getContext().getSharedPreferences("watchdirect", 0).getString("fwd", "{}"));
+        r.put("sportStart", getContext().getSharedPreferences("watchdirect", 0).getLong("sportStart", 0));
+        r.put("sportEnd", getContext().getSharedPreferences("watchdirect", 0).getLong("sportEnd", 0));
         call.resolve(r);
     }
 
@@ -177,6 +179,32 @@ public class WatchDirect extends Plugin {
 
     @PluginMethod public void getLog(PluginCall call) { call.resolve(new JSObject().put("log", WatchLink.get(getContext()).takeLog())); }
 
+
+
+    // ---------------- ريموت التمرين من الساعة ----------------
+    private final WatchLink.AtListener keyL = a -> {
+        if (a.startsWith("MCS") || a.startsWith("GES") || a.startsWith("TTP")) notifyListeners("watchKey", new JSObject().put("raw", a), true);
+    };
+    @Override public void load() { WatchLink.get(getContext()).addAtListener(keyL); }
+
+    /** يعرض التمرين على شاشة المزيكا في الساعة */
+    @PluginMethod public void music(PluginCall call) {
+        WatchLink.get(getContext()).musicInfo(call.getString("title", ""), call.getString("sub", ""), call.getString("album", "Lifestyle"),
+                call.getBoolean("playing", true), call.getInt("progress", 0), call.getInt("total", 0),
+                (op, e) -> { if (e != null) call.reject(e); else call.resolve(); });
+    }
+
+    /** الساعة في وضع تمرين؟ GES:1 */
+    @PluginMethod public void sportState(PluginCall call) {
+        WatchLink.get(getContext()).at("GES", "GES?", "GES", (op, e) -> { if (e != null) call.reject(e); else call.resolve(new JSObject().put("raw", op.at)); });
+    }
+
+    /** يخلّي الاتصال بالساعة شغال طول التمرين */
+    @PluginMethod public void hold(PluginCall call) {
+        boolean on = call.getBoolean("on", false);
+        WatchLink.get(getContext()).setKeepAlive(on || (WatchNotifService.running && WatchNotifService.cfg(getContext()).optBoolean("on", true)));
+        call.resolve();
+    }
 
     // ---------------- أوامر خام (الإعدادات بتتحسب في JS) ----------------
     static byte[] unhex(String h) { byte[] b = new byte[h.length() / 2]; for (int i = 0; i < b.length; i++) b[i] = (byte) Integer.parseInt(h.substring(i * 2, i * 2 + 2), 16); return b; }

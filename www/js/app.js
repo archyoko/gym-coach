@@ -761,7 +761,7 @@ function notifTab(st) {
       ${tg('calls', '📞 المكالمات', c.calls !== false, 'اسم المتصل يظهر والساعة تهزّ')}
       ${c.calls !== false && !st.callPerm ? `<div class="note mt"><span class="i">📞</span><span>عشان المكالمات تظهر باسم المتصل: اضغط الزرار ← وافق على كل الأذونات.</span></div><button class="btn red block sm mt" id="fwCall">اسمح بالمكالمات</button>` : ''}
       ${tg('self', '💪 تذكيرات Lifestyle', c.self !== false, 'الراحة بين السِتات، الكرياتين، المية، النوم، رسالة الكابتن')}
-      <button class="hrow" id="fwWk" style="width:100%;border:0;background:none;text-align:inherit"><span class="v">🏋️ التمرين على الساعة<small>السِت الجاي والوزن والراحة، والسعرات في الآخر</small></span><span class="d"><b class="${S.settings.wdWorkout !== false ? 'up' : 'muted'}">${S.settings.wdWorkout !== false ? '✓ شغال' : 'مقفول'}</b></span></button>
+      <button class="hrow" id="fwWk" style="width:100%;border:0;background:none;text-align:inherit"><span class="v">🏋️ التمرين على الساعة<small>شاشة المزيكا في الساعة بتبقى ريموت التمرين: ▶ خلّصت السِت · ⏭ اللي بعده · ⏮ تراجع · الصوت +/− عدة</small></span><span class="d"><b class="${S.settings.wdWorkout !== false ? 'up' : 'muted'}">${S.settings.wdWorkout !== false ? '✓ شغال' : 'مقفول'}</b></span></button>
       <div class="section-t">التطبيقات</div>
       ${FWD_APPS.map(([pk, n]) => tg('app:' + pk, n, appOn(pk))).join('')}
       ${tg('others', 'أي تطبيق تاني', !!c.others)}
@@ -1940,12 +1940,14 @@ function startPlayer(w, dk) {
   keepAwake(true);
   drawPlayer();
   clearInterval(pTimer); pTimer = setInterval(tickPlayer, 500);
+  if (WD) { try { WD.hold({ on: true }); } catch (e) { } }
 }
 let wakeLock = null;
 async function keepAwake(on) {
   try { if (on && navigator.wakeLock) wakeLock = await navigator.wakeLock.request('screen'); else if (wakeLock) { await wakeLock.release(); wakeLock = null; } } catch (e) { }
 }
 function closePlayer() {
+  if (WD) { try { WD.hold({ on: false }); } catch (e) { } }
   clearInterval(pTimer); P = null; S.active = null; save();
   $('#player').hidden = true; $('#player').innerHTML = ''; document.body.style.overflow = '';
   keepAwake(false); render();
@@ -1963,8 +1965,96 @@ function tickPlayer() {
   }
 }
 function endRest() { restCancel(); if (!P) return; const adv = P.rest && P.rest.advance; P.rest = null; if (adv) P.idx = Math.min(P.idx + 1, exList(P.dk, P.w, P.adj).length - 1); S.active = P; save(); drawPlayer(); }
+function afterSet(ex, kind, warn) {
+  if (!P) return;
+  const list = exList(P.dk, P.w, P.adj), sess = ensureSess(P.w, P.dk);
+  if (kind !== 'new') { drawPlayer(); return; }
+  const n = (sess.ex[ex.lk] || []).length;
+  if (warn === 'pain') { painStop(ex); return; }
+  const lastEx = P.idx === list.length - 1;
+  if (n >= ex.sets) {
+    if (lastEx) { if (list.every(e => (sess.ex[e.lk] || []).length >= e.sets)) P.finished = true; drawPlayer(); return; }
+    const nextEx = list[P.idx + 1];
+    const sameSS = ex.ss && nextEx.ss === ex.ss;
+    if (ex.rest && !sameSS) startRest(ex.rest, true); else { P.idx++; save(); drawPlayer(); }
+  } else if (ex.rest) startRest(ex.rest, false);
+  else drawPlayer();
+}
+/* ================= ريموت التمرين من الساعة (شاشة المزيكا) =================
+   ▶/⏸ = خلّصت السِت (وفي الراحة = تخطّى الراحة) · ⏭ = التمرين اللي بعده · ⏮ = تراجع عن آخر سِت · الصوت +/− = عدة زيادة/أقل */
+let rRepAdj = 0, rLastPush = 0, rUndo = null;
+function remoteTarget() {
+  if (!P) return null;
+  const list = exList(P.dk, P.w, P.adj), ex = list[P.idx], sess = ensureSess(P.w, P.dk), cur = sess.ex[ex.lk] || [], last = cur[cur.length - 1];
+  const sg = suggest(ex, sessKey(P.w, P.dk));
+  const w = last ? +last.w || 0 : (sg && sg.w) || 0;
+  const r = Math.max(1, (last ? +last.r : ex.reps[1]) + rRepAdj);
+  return { list, ex, sess, cur, w, r, timed: isTimed(ex) };
+}
+const shortName = (t, n = 13) => { t = String(t || '').replace(/\(.*?\)/g, '').trim(); return t.length > n ? t.slice(0, n - 1) + '…' : t; };
+async function watchMusic(force) {
+  if (!WD || !P || S.settings.wdWorkout === false) return;
+  if (!force && Date.now() - rLastPush < 1500) return;
+  rLastPush = Date.now();
+  const t = remoteTarget(); if (!t) return;
+  let o;
+  if (P.finished) o = { title: 'خلّصت 💪', sub: 'كمّل من الموبايل', playing: false, progress: 0, total: 0 };
+  else if (P.rest) {
+    const nx = P.rest.advance ? t.list[Math.min(P.idx + 1, t.list.length - 1)] : t.ex;
+    o = { title: `راحة ${clock(P.rest.total)}`, sub: `الجاي: ${shortName(nx.name)}`, playing: true, total: P.rest.total, progress: Math.max(0, Math.round(P.rest.total - (P.rest.until - Date.now()) / 1000)) };
+  } else {
+    const n = t.cur.length + 1;
+    o = { title: shortName(t.ex.name), sub: t.timed ? `سِت ${n}/${t.ex.sets} · ${t.r} ث` : `سِت ${n}/${t.ex.sets} · ${t.w ? fmt(t.w, 2) : '?'}×${t.r}`, playing: false, progress: 0, total: 0 };
+  }
+  o.album = `Lifestyle · ${dayByKey(P.dk).title}`;
+  try { await WD.music(o); } catch (e) { }
+}
+let rT = null;
+function watchMusicSoon() { clearTimeout(rT); rT = setTimeout(() => watchMusic(true), 200); }
+function remoteLog() {
+  const t = remoteTarget(); if (!t) return;
+  if (!t.timed && !t.w) { wMsg(`سجّل وزن ${shortName(t.ex.name, 20)} من الموبايل أول مرة`); return; }
+  const set = { w: t.timed ? 0 : t.w, r: t.r, rir: t.ex.rir === '—' ? null : parseInt(t.ex.rir) || 2, t: Date.now(), src: 'watch' };
+  (t.sess.ex[t.ex.lk] = t.sess.ex[t.ex.lk] || []).push(set);
+  rUndo = { lk: t.ex.lk, idx: P.idx, t: Date.now() };
+  rRepAdj = 0; save();
+  try { navigator.vibrate && navigator.vibrate(60); } catch (e) { }
+  afterSet(t.ex, 'new');
+}
+function remoteUndo() {
+  if (!P || !rUndo || Date.now() - rUndo.t > 10 * 60e3) { if (P && P.idx > 0) { P.idx--; P.rest = null; save(); drawPlayer(); } return; }
+  const sess = ensureSess(P.w, P.dk), a = sess.ex[rUndo.lk] || [];
+  if (a.length && a[a.length - 1].src === 'watch') a.pop();
+  restCancel(); P.rest = null; P.finished = false; P.idx = rUndo.idx; rUndo = null; save(); drawPlayer();
+  wMsg('اتلغى آخر سِت ↩️');
+}
+function onWatchKey(raw) {
+  raw = String(raw || '');
+  if (raw.startsWith('GES')) return;
+  if (!P || P.finished) return;
+  if (raw.startsWith('MCS:c,0') || raw.startsWith('MCS:c,1') || raw.startsWith('MCS:c,2')) { if (P.rest) endRest(); else remoteLog(); }
+  else if (raw.startsWith('MCS:c,4')) { if (P.rest) endRest(); else { const L = exList(P.dk, P.w, P.adj); if (P.idx < L.length - 1) { P.idx++; rRepAdj = 0; save(); drawPlayer(); } } }
+  else if (raw.startsWith('MCS:c,3')) remoteUndo();
+  else if (raw.startsWith('MCS:v') || raw.startsWith('MCS:s')) { const up = /[,:]1(\/|$)/.test(raw.split(',').slice(1).join(',')) || raw.endsWith(',1'); rRepAdj += up ? 1 : -1; }
+  watchMusicSoon();
+}
+if (WD) { try { WD.addListener('watchKey', e => onWatchKey(e.raw)); } catch (e) { } }
+/* بدأت/خلّصت تمرين على الساعة → Lifestyle يفتح/يقفل الحصة */
+async function watchSportCheck() {
+  if (!WD) return;
+  let st; try { st = await WD.status(); } catch (e) { return; }
+  const seen = S.settings.sportSeen || 0;
+  if (st.sportStart && st.sportStart > seen && Date.now() - st.sportStart < 20 * 60e3 && !P) {
+    S.settings.sportSeen = st.sportStart; save();
+    const tp = todayPlan(), ses = tp && (tp.today || tp.miss);
+    if (ses) { tab = 'workout'; render(); startPlayer(tp.w, ses.d.key); toast('بدأت من الساعة 💪'); }
+  } else if (st.sportEnd && st.sportEnd > seen && P && st.sportEnd > P.started && !P.finished) {
+    S.settings.sportSeen = st.sportEnd; save(); P.finished = true; drawPlayer();
+  }
+}
 function drawPlayer() {
   const root = $('#player'); if (!P) return;
+  watchMusicSoon();
   const list = exList(P.dk, P.w, P.adj), ex = list[P.idx], sess = ensureSess(P.w, P.dk);
   const doneSets = (sess.ex[ex.lk] || []).length;
   const allDone = list.every(e => (sess.ex[e.lk] || []).length >= e.sets);
@@ -2025,19 +2115,7 @@ function drawPlayer() {
   $('#pNext').onclick = () => { P.idx++; P.rest = null; save(); drawPlayer(); };
   $('#pInfo').onclick = () => infoSheet(ex);
   $('#pSwap').onclick = () => swapSheet(P.dk, ex.id, drawPlayer);
-  $('#pLog').onclick = () => logSheet(P.w, P.dk, ex, (kind, warn) => {
-    if (kind !== 'new') { drawPlayer(); return; }
-    const n = (ensureSess(P.w, P.dk).ex[ex.lk] || []).length;
-    if (warn === 'pain') { painStop(ex); return; }
-    const lastEx = P.idx === list.length - 1;
-    if (n >= ex.sets) {
-      if (lastEx) { if (list.every(e => (sess.ex[e.lk] || []).length >= e.sets)) P.finished = true; drawPlayer(); return; }
-      const nextEx = list[P.idx + 1];
-      const sameSS = ex.ss && nextEx.ss === ex.ss;
-      if (ex.rest && !sameSS) startRest(ex.rest, true); else { P.idx++; save(); drawPlayer(); }
-    } else if (ex.rest) startRest(ex.rest, false);
-    else drawPlayer();
-  });
+  $('#pLog').onclick = () => logSheet(P.w, P.dk, ex, (kind, warn) => afterSet(ex, kind, warn));
   const f = $('#pFinish'); if (f) f.onclick = () => { P.finished = true; drawPlayer(); };
   if (P.rest) bindRest();
 }
@@ -2431,6 +2509,7 @@ if (LN) setupNotifActions();
 if (ghOn()) setTimeout(() => ghSync(), 2500);
 setTimeout(gymCheck, 3000);
 if (UP) setTimeout(() => upCheck(false), 4000);
+if (WD) setTimeout(watchSportCheck, 1200);
 if (WD) setTimeout(() => watchSync(false).then(ok => { if (ok && $('#player').hidden && $('#sheet').hidden) render(); }), 1500);
 if (LN) (async () => {
   try { if (S.settings.notif && !S.settings.notifAsked) { S.settings.notifAsked = true; save(); await LN.requestPermissions(); } } catch (e) { }
@@ -2442,6 +2521,7 @@ document.addEventListener('visibilitychange', () => {
   if (!P && ghOn() && Date.now() - (S.settings.ghLast || 0) > 30 * 60e3) ghSync();
   if (!P) setTimeout(gymCheck, 800);
   if (UP && !P && Date.now() - (S.settings.upChecked || 0) > 3 * 3600e3) setTimeout(() => upCheck(false), 2000);
+  if (WD) setTimeout(watchSportCheck, 600);
   if (WD && !P) setTimeout(() => watchSync(false).then(ok => { if (ok && $('#player').hidden && $('#sheet').hidden) render(); }), 1200);
   if (P) { tickPlayer(); keepAwake(true); }
   if (Zepp && !P) zeppPull().then(async () => {

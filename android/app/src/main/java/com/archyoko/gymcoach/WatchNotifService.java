@@ -66,6 +66,7 @@ public class WatchNotifService extends NotificationListenerService {
         WatchLink w = WatchLink.get(this);
         w.addAtListener(atL);
         if (cfg(this).optBoolean("on", false)) w.setKeepAlive(true);
+        h.postDelayed(gesPoll, 20000);
     }
 
     @Override public void onListenerDisconnected() {
@@ -73,6 +74,37 @@ public class WatchNotifService extends NotificationListenerService {
         WatchLink w = WatchLink.get(this);
         w.removeAtListener(atL);
         w.setKeepAlive(false);
+        h.removeCallbacks(gesPoll);
+    }
+
+    /** كل دقيقة بالليل: لو محمد بدأ تمرين على الساعة → إشعار يفتح Lifestyle على التمرين */
+    private int lastGes = -1;
+    private final Runnable gesPoll = new Runnable() { @Override public void run() {
+        int hr = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY);
+        if (hr >= 15 && WatchLink.get(WatchNotifService.this).isReady()) {
+            WatchLink.get(WatchNotifService.this).at("GES", "GES?", "GES", (op, e) -> {
+                if (e != null || op.at == null) return;
+                int v = op.at.contains(":1") ? 1 : 0;
+                if (v == 1 && lastGes == 0) {
+                    prefs(WatchNotifService.this).edit().putLong("sportStart", System.currentTimeMillis()).apply();
+                    startNotif();
+                } else if (v == 0 && lastGes == 1) prefs(WatchNotifService.this).edit().putLong("sportEnd", System.currentTimeMillis()).apply();
+                lastGes = v;
+            });
+        }
+        h.postDelayed(this, hr >= 15 ? 45000 : 10 * 60000);
+    } };
+
+    private void startNotif() {
+        try {
+            android.app.NotificationManager nm = (android.app.NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+            if (Build.VERSION.SDK_INT >= 26) nm.createNotificationChannel(new android.app.NotificationChannel("watchsport", "تمرين من الساعة", android.app.NotificationManager.IMPORTANCE_HIGH));
+            android.content.Intent i = new android.content.Intent(this, MainActivity.class).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK | android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP);
+            android.app.PendingIntent pi = android.app.PendingIntent.getActivity(this, 77, i, android.app.PendingIntent.FLAG_IMMUTABLE | android.app.PendingIntent.FLAG_UPDATE_CURRENT);
+            Notification.Builder b = Build.VERSION.SDK_INT >= 26 ? new Notification.Builder(this, "watchsport") : new Notification.Builder(this);
+            b.setSmallIcon(getApplicationInfo().icon).setContentTitle("بدأت تمرين على الساعة 💪").setContentText("اضغط هنا وLifestyle يفتح تمرين النهارده").setContentIntent(pi).setAutoCancel(true).setFullScreenIntent(pi, true);
+            nm.notify(7701, b.build());
+        } catch (Exception ex) { WatchLink.get(this).L("startNotif " + ex); }
     }
 
     static boolean isDialer(String pkg) {
