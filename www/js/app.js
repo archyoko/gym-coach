@@ -731,16 +731,19 @@ async function fwProbe(btn) {
     const cf = await gh('GET', 'fw/linwear.json');
     const cfg = JSON.parse(decodeURIComponent(escape(atob(cf.content.replace(/\n/g, '')))));
     const mac = (S.watch && S.watch.mac) || hw.mac;
-    const body = JSON.stringify({ adapterNum: hw.adapter, otaVersion: hw.fw, uiVersion: hw.ui, netVersion: hw.fw });
+    // السيرفر بيدّي الملف بس لو فيه نسخة أحدث، فبنسأل كأن الساعة على نسخة قديمة عشان يدّينا آخر ملف
+    const bodies = [{ adapterNum: hw.adapter, otaVersion: hw.fw, uiVersion: hw.ui, netVersion: hw.fw }, { adapterNum: hw.adapter, otaVersion: 'V0.01', uiVersion: hw.adapter + '-00', netVersion: 'V0.01' }];
     let res = null;
+    for (const bd of bodies) { if (res) break; const body = JSON.stringify(bd);
     for (const host of cfg.hosts) {
       say('بيسأل سيرفر الساعة…');
       try {
         const x = await UP.watchApi({ url: host + cfg.path, body, token: cfg.token || '', client: cfg.client, salt: cfg.salt, name: (S.watch && S.watch.name) || hw.name, num: hw.adapter, mac, ver: hw.fw });
         out.steps.push({ host, code: x.code, text: (x.text || '').slice(0, 3000) });
-        if (x.code === 200 && !/"code":2\d{4}/.test(x.text || '')) { res = x; break; }
+        if (x.code === 200 && /upgradeList/.test(x.text || '')) { res = x; break; }
+        if (x.code === 200 && /"code":200/.test(x.text || '')) break;
       } catch (e) { out.steps.push({ host, err: String(e.message || e) }); }
-    }
+    } }
     if (res) {
       let j = null; try { j = JSON.parse(res.text); } catch (e) { }
       const list = (j && j.data && (j.data.upgradeList || [])) || [];
