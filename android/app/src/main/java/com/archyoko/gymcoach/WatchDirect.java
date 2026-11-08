@@ -316,6 +316,7 @@ public class WatchDirect extends Plugin {
                     arr.put(s);
                 }
                 result.put("sleeps", arr);
+                result.put("raw8113", hex(b));
                 break;
             }
             case "8180": { // النبض: كل سجل 60 قراءة كل X دقيقة

@@ -810,7 +810,7 @@ async function watchSync(manual) {
     try { await WD.atRaw({ cmd: 'SUT:' + Math.floor(Date.now() / 1000) }); } catch (e) { }
     const r = await WD.sync({ days: 7, hrDays: 2, log: !!manual });
     watchMerge(r);
-    if (manual && ghOn() && S.settings.wdDebug) { try { await ghPut(`debug/watch-${Date.now()}.json`, b64(JSON.stringify(r, null, 1)), 'watch sync'); } catch (e) { } }
+    if (manual && ghOn()) { try { await ghPut(`debug/sleep-${Date.now()}.json`, b64(JSON.stringify({ raw8113: r.raw8113, sleeps: r.sleeps, today: r.today, at: new Date().toString() }, null, 1)), 'sleep debug'); } catch (e) { } }
     S.settings.wdLastLog = (r.log || '').slice(-3000); S.settings.wdFail = 0; save();
     return true;
   } catch (e) {
