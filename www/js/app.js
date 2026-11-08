@@ -13,6 +13,8 @@ const diffDays = (a, b) => Math.round((parseISO(a) - parseISO(b)) / 864e5);
 const r1 = n => Math.round(n * 10) / 10;
 const fmt = (n, d = 0) => (n == null || isNaN(n)) ? '—' : Number(n).toLocaleString('en-US', { maximumFractionDigits: d, minimumFractionDigits: 0 });
 const clock = s => { s = Math.max(0, Math.round(s)); const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = s % 60; return (h ? pad2(h) + ':' : '') + pad2(m) + ':' + pad2(x); };
+// مدة النوم بالساعات: 440 → "7 س 20 د"، 120 → "2 س"، 47 → "47 د"
+const hDur = m => { if (m == null || isNaN(m)) return '—'; m = Math.round(m); const h = Math.floor(m / 60), mm = m % 60; return h ? `${h} س${mm ? ' ' + mm + ' د' : ''}` : `${mm} د`; };
 const AR_DAYS = ['الأحد', 'الاتنين', 'التلات', 'الأربع', 'الخميس', 'الجمعة', 'السبت'];
 const AR_MON = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
 const nice = s => { const d = parseISO(s); return `${AR_DAYS[d.getDay()]} ${d.getDate()} ${AR_MON[d.getMonth()]}`; };
@@ -362,9 +364,9 @@ function sleepQ(d) {
   const add = (k, label, got, of, txt) => { parts.push({ k, label, got: Math.round(got), of, txt }); pts += got; max += of; };
   if (dur) { let g = Math.min(1, Math.max(0, (dur - 270) / 180)) * 40; if (dur > 570) g -= 5; add('dur', 'المدة', g, 40, `${Math.floor(dur / 60)}:${pad2(dur % 60)} ساعة`); }
   const tot = dur || ((z.deep || 0) + (z.light || 0) + (z.rem || 0)) || null;
-  if (z.deep != null && tot) { const pc = z.deep / tot; add('deep', 'نوم عميق', Math.min(1, pc / 0.18) * 20, 20, `${z.deep} دقيقة · ${Math.round(pc * 100)}% (المثالي 15–25%)`); }
-  if (z.rem != null && tot) { const pc = z.rem / tot; add('rem', 'REM (الأحلام)', Math.min(1, pc / 0.2) * 20, 20, `${z.rem} دقيقة · ${Math.round(pc * 100)}% (المثالي 20–25%)`); }
-  if (z.awake != null) add('awake', 'صحيان بالليل', z.awake <= 20 ? 10 : z.awake >= 60 ? 0 : (60 - z.awake) / 40 * 10, 10, `${z.awake} دقيقة صاحي`);
+  if (z.deep != null && tot) { const pc = z.deep / tot; add('deep', 'نوم عميق', Math.min(1, pc / 0.18) * 20, 20, `${hDur(z.deep)} · ${Math.round(pc * 100)}% (المثالي 15–25%)`); }
+  if (z.rem != null && tot) { const pc = z.rem / tot; add('rem', 'REM (الأحلام)', Math.min(1, pc / 0.2) * 20, 20, `${hDur(z.rem)} · ${Math.round(pc * 100)}% (المثالي 20–25%)`); }
+  if (z.awake != null) add('awake', 'صحيان بالليل', z.awake <= 20 ? 10 : z.awake >= 60 ? 0 : (60 - z.awake) / 40 * 10, 10, `${hDur(z.awake)} صاحي`);
   const bm = bedMin(z.bed);
   if (bm != null) { const prev = []; for (let i = 1; i <= 7; i++) { const b = bedMin(((S.health[addDays(d, -i)] || {}).zsq || {}).bed); if (b != null) prev.push(b); }
     if (prev.length >= 3) { prev.sort((a, b) => a - b); const med = prev[Math.floor(prev.length / 2)], df = Math.abs(bm - med); add('reg', 'انتظام ميعاد النوم', df <= 30 ? 10 : df >= 120 ? 0 : (120 - df) / 90 * 10, 10, `نمت ${z.bed} – العادي بتاعك ${pad2(Math.floor(med / 60) % 24)}:${pad2(med % 60)}`); } }
@@ -419,7 +421,7 @@ function sleepSheet(d = today()) {
       • <b>الجوع:</b> ليلة وحشة بتعلّي هرمون الجوع – اليوم اللي بعدها الكابتن بيفكّرك تمسك البروتين.</p>
       ${fx.length ? `<div class="section-t" style="margin-top:14px">من بياناتك انت</div><p class="small" style="line-height:1.9;margin:0">${fx.join('<br>')}</p>` : '<p class="muted small" style="margin:10px 0 0">بعد كام أسبوع هقولك النوم بيأثر عليك انت بالأرقام (خطوات، أكل زيادة، صعوبة التمرين).</p>'}</div>
     <div class="section-t">آخر 7 ليالي</div>
-    ${[...Array(7)].map((_, i) => { const dd = addDays(d, -i), qq = sleepQ(dd); return `<div class="hrow"><span class="d num">${short(dd)}</span><span class="v">${qq ? `<b>${qq.score}</b> ${SQ_TXT[qq.level][0]} · ${qq.dur ? `${Math.floor(qq.dur / 60)}:${pad2(qq.dur % 60)}` : '—'}${qq.z.deep != null ? ` · عميق ${qq.z.deep}د` : ''}${qq.z.rem != null ? ` · REM ${qq.z.rem}د` : ''}` : '—'}</span></div>`; }).join('')}
+    ${[...Array(7)].map((_, i) => { const dd = addDays(d, -i), qq = sleepQ(dd); return `<div class="hrow"><span class="d num">${short(dd)}</span><span class="v">${qq ? `<b>${qq.score}</b> ${SQ_TXT[qq.level][0]} · ${hDur(qq.dur)}${qq.z.deep != null ? ` · عميق ${hDur(qq.z.deep)}` : ''}${qq.z.rem != null ? ` · REM ${hDur(qq.z.rem)}` : ''}` : '—'}</span></div>`; }).join('')}
     <label class="field" style="display:flex;align-items:center;gap:10px"><input type="checkbox" id="bedOn" ${S.settings.bedRemind ? 'checked' : ''} style="width:22px;height:22px"><span style="margin:0">فكّرني أقفل الشاشات قبل النوم بنص ساعة</span></label>
     <label class="field"><span>ميعاد النوم</span><input id="bedT" class="inp num" type="time" value="${S.settings.bedTime || '00:00'}"></label>
     <button class="btn red block mt" id="sqSave">حفظ</button>`, p => {
@@ -987,9 +989,9 @@ function dataTab() {
     <div class="hrow"><span class="v">سعرات الحركة</span><span class="d num">${fmt(h.zactive)}</span></div>
     ${t.hr ? `<div class="hrow"><span class="v">النبض دلوقتي</span><span class="d num">${t.hr} ❤️</span></div>` : ''}
     ${lastNight ? `<div class="section-t">نوم امبارح</div>
-      <div class="hrow"><span class="v">من ${esc(lastNight.bed || '—')} لـ ${esc(lastNight.wake || '—')}</span><span class="d num">${h.zsleep ? `${Math.floor(h.zsleep / 60)}:${pad2(h.zsleep % 60)} ساعة` : ''}</span></div>
+      <div class="hrow"><span class="v">من ${esc(lastNight.bed || '—')} لـ ${esc(lastNight.wake || '—')}</span><span class="d num">${h.zsleep ? hDur(h.zsleep) : ''}</span></div>
       ${stagesBar(stg)}
-      <p class="small" style="margin:6px 0 0;line-height:1.9">عميق <b>${lastNight.deep ?? '—'}</b> د · خفيف <b>${lastNight.light ?? '—'}</b> د · أحلام <b>${lastNight.rem ?? '—'}</b> د · صاحي <b>${lastNight.awake ?? '—'}</b> د</p>` : ''}
+      <p class="small" style="margin:6px 0 0;line-height:1.9">عميق <b>${hDur(lastNight.deep)}</b> · خفيف <b>${hDur(lastNight.light)}</b> · أحلام <b>${hDur(lastNight.rem)}</b> · صاحي <b>${hDur(lastNight.awake)}</b></p>` : ''}
     ${hrSvg(W.hr) ? `<div class="section-t">النبض آخر 24 ساعة</div><div class="card pad">${hrSvg(W.hr)}</div>` : ''}
     ${(W.workouts || []).length ? `<div class="section-t">تمارين سجّلتها الساعة</div>${W.workouts.slice(-5).reverse().map(w => `<div class="hrow"><span class="v">${new Date(w.begin * 1000).toLocaleDateString('ar-EG', { weekday: 'short', day: 'numeric', month: 'short' })} · ${Math.round((w.sec || 0) / 60)} د</span><span class="d num">${w.kcal || 0} سعر · نبض ${w.avgHR || '—'}</span></div>`).join('')}` : ''}
     <p class="muted small mt" style="line-height:1.8">التطبيق بيقرا من الساعة لوحده كل ما تفتحه (كل 45 دقيقة بالكتير).</p>`;
