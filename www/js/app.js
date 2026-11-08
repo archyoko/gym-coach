@@ -780,15 +780,19 @@ function watchMerge(r) {
     if (x.stress) h.stress = x.stress;
     h.wd = 1;
   }
+  const seenSleep = {}; // أطول نوم لكل يوم (القراية المباشرة تكسب القارئ القديم)
   for (const sl of r.sleeps || []) {
-    if (!sl.end || sl.nap) continue;
-    const d = tISO(sl.end), h = H(d);
-    let awake = 0, deep = 0, light = 0, rem = 0;
-    for (const [k, m] of sl.stages || []) { if (k === 2) awake += m; else if (k === 0) deep += m; else if (k === 1) light += m; else if (k === 3) rem += m; }
-    if (!deep && !light) { deep = sl.deep || 0; light = sl.light || 0; rem = sl.rem || 0; }
-    const sq = Object.assign({}, h.zsq || {}, { deep, light, rem, awake, bed: tHM(sl.start), wake: tHM(sl.end) });
-    delete sq.score; // الساعة مش بتدّي سكور – الكابتن بيحسبه
-    h.zsq = sq; h.zsleep = deep + light + rem; h.wd = 1;
+    if (!sl.end) continue;
+    const deep = sl.deep || 0, light = sl.light || 0, rem = sl.rem || 0, total = deep + light + rem;
+    if (total < 45) continue; // قيلولة قصيرة أو ضجيج
+    const d = tISO(sl.end);
+    if (seenSleep[d] >= total) continue;
+    seenSleep[d] = total;
+    const h = H(d);
+    let awake = 0; // الحالة 0 = صاحي
+    for (const [k, m] of sl.stages || []) if (k === 0) awake += m;
+    h.zsq = { deep, light, rem, awake, bed: tHM(sl.start), wake: tHM(sl.end) };
+    h.zsleep = total; h.wd = 1;
     (W.stages = W.stages || {})[d] = (sl.stages || []).slice(0, 200);
   }
   if (r.hr && r.hr.length) W.hr = r.hr.slice(-600);
@@ -810,7 +814,7 @@ async function watchSync(manual) {
     try { await WD.atRaw({ cmd: 'SUT:' + Math.floor(Date.now() / 1000) }); } catch (e) { }
     const r = await WD.sync({ days: 7, hrDays: 2, log: !!manual });
     watchMerge(r);
-    if (manual && ghOn()) { try { await ghPut(`debug/sleep-${Date.now()}.json`, b64(JSON.stringify({ raw8113: r.raw8113, sleeps: r.sleeps, today: r.today, at: new Date().toString() }, null, 1)), 'sleep debug'); } catch (e) { } }
+    if (manual && ghOn() && S.settings.wdDebug) { try { await ghPut(`debug/sleep-${Date.now()}.json`, b64(JSON.stringify({ raw8113: r.raw8113, sleeps: r.sleeps }, null, 1)), 'sleep debug'); } catch (e) { } }
     S.settings.wdLastLog = (r.log || '').slice(-3000); S.settings.wdFail = 0; save();
     return true;
   } catch (e) {
@@ -830,7 +834,7 @@ function hrSvg(hr) {
 }
 function stagesBar(st) {
   if (!st || !st.length) return '';
-  const col = { 0: '#5b2fa0', 1: '#a98be0', 2: '#ffb020', 3: '#3d9bff', 4: '#ccc' }, tot = st.reduce((a, x) => a + x[1], 0) || 1;
+  const col = { 0: '#ffb020', 1: '#a98be0', 2: '#5b2fa0', 3: '#3d9bff', 4: '#ccc' }, tot = st.reduce((a, x) => a + x[1], 0) || 1;
   return `<div style="display:flex;height:22px;border-radius:8px;overflow:hidden;margin:8px 0">${st.map(([k, m]) => `<i style="flex:${m / tot};background:${col[k] || '#ddd'}"></i>`).join('')}</div>
     <div class="muted small" style="display:flex;gap:10px;flex-wrap:wrap"><span style="color:#5b2fa0">■ عميق</span><span style="color:#a98be0">■ خفيف</span><span style="color:#3d9bff">■ أحلام</span><span style="color:#ffb020">■ صاحي</span></div>`;
 }

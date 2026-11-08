@@ -116,6 +116,7 @@ public class WatchDirect extends Plugin {
                 w.read("0102", 0x01, 0x02, 0, 0, d); n++;
                 w.read("0110", 0x01, 0x10, dayStart(-days), now, d); n++;
                 w.read("0113", 0x01, 0x13, dayStart(-days), now + 1, d); n++;
+                w.read("0117", 0x01, 0x17, dayStart(-1), now + 1, d); n++; // نوم ليلة امبارح/الحالي
                 w.read("0180", 0x01, 0x80, dayStart(-hrDays + 1), now, d); n++;
                 w.read("0115", 0x01, 0x15, dayStart(-days), now, d); n++;
             }
@@ -293,8 +294,10 @@ public class WatchDirect extends Plugin {
                 result.put("days", arr);
                 break;
             }
-            case "8113": { // النوم بمراحله
-                JSArray arr = new JSArray();
+            case "8113": // النوم بمراحله (آخر 60 يوم)
+            case "8117": { // نوم الليلة الحالية/ليلة امبارح – نفس الصيغة، بنزوّده على نفس المصفوفة
+                JSONArray arr = result.optJSONArray("sleeps");
+                if (arr == null) arr = new JSONArray();
                 // حجم السجل: نحدده من إن الطول بيتقسم عليه صح (أأمن من بايت النسخة)
                 int size = (b.length % 824 == 0) ? 824 : (b.length % 224 == 0) ? 224 : ((b.length > 4 && u8(b, 4) == 0) ? 224 : 824);
                 for (int o = 0; o + 24 <= b.length; o += size) {
@@ -312,11 +315,11 @@ public class WatchDirect extends Plugin {
                         int p = o + 24 + i * 4;
                         st.put(new JSONArray().put(u8(b, p)).put(le(b, p + 2, p + 4)));
                     }
-                    s.put("stages", st); // [حالة, دقايق] – 0 عميق، 1 خفيف، 2 صاحي، 3 REM، 4 قيلولة
+                    s.put("stages", st); // [حالة, دقايق] – 0 صاحي، 1 خفيف، 2 عميق، 3 REM
                     arr.put(s);
                 }
                 result.put("sleeps", arr);
-                result.put("raw8113", hex(b));
+                if (cmd.equals("8113")) result.put("raw8113", hex(b));
                 break;
             }
             case "8180": { // النبض: كل سجل 60 قراءة كل X دقيقة
