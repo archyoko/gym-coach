@@ -295,8 +295,8 @@ public class WatchDirect extends Plugin {
             }
             case "8113": { // النوم بمراحله
                 JSArray arr = new JSArray();
-                int ver = b.length > 4 ? u8(b, 4) : 0;
-                int size = ver == 0 ? 224 : 824;
+                // حجم السجل: نحدده من إن الطول بيتقسم عليه صح (أأمن من بايت النسخة)
+                int size = (b.length % 824 == 0) ? 824 : (b.length % 224 == 0) ? 224 : ((b.length > 4 && u8(b, 4) == 0) ? 224 : 824);
                 for (int o = 0; o + 24 <= b.length; o += size) {
                     JSObject s = new JSObject();
                     s.put("time", le(b, o, o + 4));

@@ -312,7 +312,12 @@ public class WatchLink {
                 L("state " + state + " status " + status);
                 if (g != gatt) { try { g.close(); } catch (Exception ignored) { } return; }
                 if (state == BluetoothProfile.STATE_CONNECTED) g.requestMtu(247);
-                else if (state == BluetoothProfile.STATE_DISCONNECTED) { drop(); if (cur == null && q.isEmpty()) { scheduleReconnect(); } else { failAll("الساعة فصلت"); scheduleReconnect(); } }
+                else if (state == BluetoothProfile.STATE_DISCONNECTED) {
+                    drop();
+                    // لو فيه شغل منتظر نرجع نوصل؛ لو مفيش (الساعة قفلت الاتصال وهي فاضية) نستنى لحد ما ييجي إشعار ونوصل ساعتها — بيوفّر بطارية
+                    if (cur != null || !q.isEmpty()) { failAll("الساعة فصلت"); scheduleReconnect(); }
+                    else L("idle disconnect — reconnect on demand");
+                }
             });
         }
         @SuppressLint("MissingPermission")
