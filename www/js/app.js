@@ -2036,8 +2036,82 @@ function renderWorkout(el) {
 }
 const findEx = (dk, id) => { const w = view.week || curWeek(); const isNow = w === curWeek() && plannedDate(w, dk) <= today() && !sessDone(w, dk); return exList(dk, w, isNow ? readiness().level : null).find(e => e.id === id) || exList(dk, w).find(e => e.id === id); };
 
+/* أسماء العضلات بالعربي لمفاتيح الرسمة */
+const MUSCLE = { chest: 'الصدر', frontDelt: 'الكتف الأمامي', sideDelt: 'الكتف الجانبي', rearDelt: 'الكتف الخلفي', triceps: 'الترايسبس (خلف الذراع)', biceps: 'الباي (أمام الذراع)', forearm: 'الساعد', lats: 'اللاتس (جناح الضهر)', upperBack: 'أعلى الضهر', abs: 'البطن', lowerBack: 'أسفل الضهر', glutes: 'الألوية', gluteMed: 'الألوية الجانبية', quads: 'الفخذ الأمامي', hams: 'خلفية الفخذ', calves: 'السمانة' };
+
+/* خريطة عضلات: جسم قدّام + ورا، نلوّن العضلة الأساسية (أحمر) والمساعدة (برتقالي فاتح) */
+function muscleMap(prime, aux) {
+  prime = prime || []; aux = aux || [];
+  const col = k => prime.includes(k) ? 'var(--red)' : aux.includes(k) ? '#ffbf9b' : '#e3e5ec';
+  const S = 'stroke="#aeb3c0" stroke-width="1" stroke-linejoin="round"';
+  const base = 'fill="#e3e5ec" ' + S;
+  const front = `<g>
+    <circle cx="50" cy="16" r="10" ${base}/>
+    <path d="M44 25 h12 v6 h-12 z" ${base}/>
+    <ellipse cx="26" cy="40" rx="9" ry="8" fill="${col('sideDelt')}" ${S}/>
+    <ellipse cx="74" cy="40" rx="9" ry="8" fill="${col('sideDelt')}" ${S}/>
+    <ellipse cx="33" cy="42" rx="6" ry="6" fill="${col('frontDelt')}" ${S}/>
+    <ellipse cx="67" cy="42" rx="6" ry="6" fill="${col('frontDelt')}" ${S}/>
+    <path d="M34 36 Q50 34 50 34 L50 56 Q40 58 33 52 Q31 42 34 36 Z" fill="${col('chest')}" ${S}/>
+    <path d="M66 36 Q50 34 50 34 L50 56 Q60 58 67 52 Q69 42 66 36 Z" fill="${col('chest')}" ${S}/>
+    <path d="M42 58 h16 v34 q-8 6 -16 0 z" fill="${col('abs')}" ${S}/>
+    <line x1="50" y1="59" x2="50" y2="90" stroke="#aeb3c0" stroke-width="1"/>
+    <line x1="42" y1="69" x2="58" y2="69" stroke="#aeb3c0" stroke-width="1"/>
+    <line x1="42" y1="80" x2="58" y2="80" stroke="#aeb3c0" stroke-width="1"/>
+    <path d="M22 50 q-6 10 -4 22 q6 3 10 -1 q2 -12 -1 -22 z" fill="${col('biceps')}" ${S}/>
+    <path d="M78 50 q6 10 4 22 q-6 3 -10 -1 q-2 -12 1 -22 z" fill="${col('biceps')}" ${S}/>
+    <path d="M18 73 q-3 14 0 26 q6 2 9 -1 q2 -13 0 -26 z" fill="${col('forearm')}" ${S}/>
+    <path d="M82 73 q3 14 0 26 q-6 2 -9 -1 q-2 -13 0 -26 z" fill="${col('forearm')}" ${S}/>
+    <path d="M40 95 q-4 26 -2 46 q7 4 11 0 q1 -24 0 -46 z" fill="${col('quads')}" ${S}/>
+    <path d="M60 95 q4 26 2 46 q-7 4 -11 0 q-1 -24 0 -46 z" fill="${col('quads')}" ${S}/>
+    <path d="M41 146 q-2 18 1 34 q6 2 8 -1 q2 -17 0 -33 z" fill="${col('calves')}" ${S}/>
+    <path d="M59 146 q2 18 -1 34 q-6 2 -8 -1 q-2 -17 0 -33 z" fill="${col('calves')}" ${S}/>
+  </g>`;
+  const back = `<g>
+    <circle cx="50" cy="16" r="10" ${base}/>
+    <path d="M38 28 Q50 24 62 28 L58 40 Q50 37 42 40 Z" fill="${col('upperBack')}" ${S}/>
+    <ellipse cx="28" cy="40" rx="8" ry="7" fill="${col('rearDelt')}" ${S}/>
+    <ellipse cx="72" cy="40" rx="8" ry="7" fill="${col('rearDelt')}" ${S}/>
+    <ellipse cx="24" cy="42" rx="5" ry="6" fill="${col('sideDelt')}" ${S}/>
+    <ellipse cx="76" cy="42" rx="5" ry="6" fill="${col('sideDelt')}" ${S}/>
+    <path d="M40 44 Q34 60 44 74 L50 70 L50 46 Z" fill="${col('lats')}" ${S}/>
+    <path d="M60 44 Q66 60 56 74 L50 70 L50 46 Z" fill="${col('lats')}" ${S}/>
+    <path d="M44 74 h12 v16 q-6 4 -12 0 z" fill="${col('lowerBack')}" ${S}/>
+    <path d="M22 50 q-6 10 -4 22 q6 3 10 -1 q2 -12 -1 -22 z" fill="${col('triceps')}" ${S}/>
+    <path d="M78 50 q6 10 4 22 q-6 3 -10 -1 q-2 -12 1 -22 z" fill="${col('triceps')}" ${S}/>
+    <path d="M18 73 q-3 14 0 26 q6 2 9 -1 q2 -13 0 -26 z" fill="${col('forearm')}" ${S}/>
+    <path d="M82 73 q3 14 0 26 q-6 2 -9 -1 q-2 -13 0 -26 z" fill="${col('forearm')}" ${S}/>
+    <path d="M41 92 q-3 10 1 18 q8 5 8 0 L50 93 Z" fill="${col('glutes')}" ${S}/>
+    <path d="M59 92 q3 10 -1 18 q-8 5 -8 0 L50 93 Z" fill="${col('glutes')}" ${S}/>
+    <ellipse cx="38" cy="96" rx="5" ry="6" fill="${col('gluteMed')}" ${S}/>
+    <ellipse cx="62" cy="96" rx="5" ry="6" fill="${col('gluteMed')}" ${S}/>
+    <path d="M40 112 q-4 20 -2 34 q7 4 11 0 q1 -18 0 -34 z" fill="${col('hams')}" ${S}/>
+    <path d="M60 112 q4 20 2 34 q-7 4 -11 0 q-1 -18 0 -34 z" fill="${col('hams')}" ${S}/>
+    <path d="M41 150 q-2 18 1 32 q6 2 8 -1 q2 -16 0 -31 z" fill="${col('calves')}" ${S}/>
+    <path d="M59 150 q2 18 -1 32 q-6 2 -8 -1 q-2 -16 0 -31 z" fill="${col('calves')}" ${S}/>
+  </g>`;
+  return `<div class="mmap">
+    <figure><svg viewBox="0 0 100 195" xmlns="http://www.w3.org/2000/svg">${front}</svg><figcaption>قدّام</figcaption></figure>
+    <figure><svg viewBox="0 0 100 195" xmlns="http://www.w3.org/2000/svg">${back}</svg><figcaption>ورا</figcaption></figure>
+  </div>`;
+}
+
+/* بلوك التشريح: رسمة + أسماء العضلات + الشرح */
+function anatomyBlock(ex) {
+  const pr = (ex.prime || []).filter(k => MUSCLE[k]), ax = (ex.aux || []).filter(k => MUSCLE[k]);
+  if (!pr.length && !ax.length && !ex.anatomy) return '';
+  const tags = pr.map(k => `<span class="mtag pr"><span class="dot"></span>${MUSCLE[k]}</span>`).join('')
+    + ax.map(k => `<span class="mtag ax"><span class="dot"></span>${MUSCLE[k]}</span>`).join('');
+  return `<div class="section-t">التشريح: العضلات اللي بتشتغل 🫀</div>
+    ${pr.length || ax.length ? muscleMap(ex.prime, ex.aux) : ''}
+    ${tags ? `<div class="mlegend">${tags}</div>` : ''}
+    ${ex.anatomy ? `<div class="anatomy-card">${esc(ex.anatomy)}</div>` : ''}`;
+}
+
 function infoSheet(ex, dark) {
   const q = encodeURIComponent(ex.en + ' exercise form');
+  const qForm = encodeURIComponent(ex.en + ' proper form technique');
+  const qAnat = encodeURIComponent(ex.en + ' muscles worked animation');
   openSheet(sheetHead(esc(ex.name), esc(ex.en)) + `
     ${ex.img ? `<div class="media" style="border-radius:18px;margin-top:14px"><img src="media/${ex.img}/0.jpg" alt=""><img class="f1" src="media/${ex.img}/1.jpg" alt=""></div>` : ''}
     <div class="chips"><span class="chip">مجموعة<b class="num">${ex.sets}</b></span><span class="chip">${unitTxt(ex)}<b class="num">${repsTxt(ex)}</b></span>${ex.rir !== '—' ? `<span class="chip">RIR<b class="num">${ex.rir}</b></span>` : ''}${ex.rest ? `<span class="chip">راحة<b class="num">${restTxt(ex.rest)}</b></span>` : ''}${ex.fail ? '<span class="chip ok">فشل مسموح آخر مجموعة</span>' : ''}${ex.noFail ? '<span class="chip red">ممنوع الفشل</span>' : ''}</div>
@@ -2045,10 +2119,14 @@ function infoSheet(ex, dark) {
     ${ex.baseName ? `<p class="muted small">ده بديل لـ: ${esc(ex.baseName)}</p>` : ''}
     <b>خلّي بالك</b><ul class="cues">${ex.cues.map(c => `<li>${esc(c)}</li>`).join('')}</ul>
     ${ex.warmup ? `<div class="section-t">سخّن له الأول</div><p style="line-height:1.9">${esc(ex.warmup)}</p>` : ''}
-    ${ex.anatomy ? `<div class="section-t">إيه اللي بيحصل في جسمك 🫀</div><p style="line-height:1.9">${esc(ex.anatomy)}</p>` : ''}
-    ${ex.fixes ? `<div class="section-t">بيعالج إيه في نقط ضعفك</div><p style="line-height:1.9">${esc(ex.fixes)}</p>` : ''}
-    <a class="yt" href="https://www.youtube.com/results?search_query=${q}" target="_blank" rel="noopener">▶ فيديو على يوتيوب</a>
-    ${ex.img ? `<p class="muted small mt">الصور من free-exercise-db (ملكية عامة).</p>` : ''}`);
+    ${anatomyBlock(ex)}
+    ${ex.fixes ? `<div class="section-t">بيعالج إيه في نقط ضعفك عندك</div><div class="anatomy-card">${esc(ex.fixes)}</div>` : ''}
+    <div class="section-t">فيديو 🎬</div>
+    <div class="vidrow">
+      <a class="vidbtn" href="https://www.youtube.com/results?search_query=${qForm}" target="_blank" rel="noopener"><span class="pz"></span>الأداء الصح<small>إزاي تعمله مظبوط</small></a>
+      <a class="vidbtn" href="https://www.youtube.com/results?search_query=${qAnat}" target="_blank" rel="noopener"><span class="pz"></span>التشريح بالحركة<small>العضلة وهي بتشتغل</small></a>
+    </div>
+    ${ex.img ? `<p class="muted small mt">الصور من free-exercise-db (ملكية عامة). الفيديوهات بتفتح على يوتيوب.</p>` : '<p class="muted small mt">الفيديوهات بتفتح على يوتيوب.</p>'}`);
 }
 
 function swapSheet(dk, id, after) {
