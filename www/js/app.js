@@ -310,9 +310,24 @@ function plateau(ex) {
   return { next, since: ds[ds.length - 3] };
 }
 /* التمارين لجلسة: أسبوع مزنوق بيضيف الكتف الجانبي والفيس بول لـ LOWER A، والجاهزية بتقلل المجموعات */
+/* تعديلات البرنامج اللي الكابتن بيبعتها في coach/program.json – بتطبّق من غير تحديث للتطبيق */
+function dayEx(k) {
+  let arr = (PROGRAM.ex[k] || []).slice();
+  const cp = (S.coach && S.coach.program) || null;
+  if (!cp) return arr;
+  if (Array.isArray(cp.remove)) arr = arr.filter(e => !cp.remove.includes(e.id));
+  if (cp.set) arr = arr.map(e => cp.set[e.id] ? Object.assign({}, e, cp.set[e.id]) : e);
+  if (cp.add && cp.add[k]) for (const a of cp.add[k]) {
+    if (arr.some(e => e.id === a.id)) { arr = arr.map(e => e.id === a.id ? Object.assign({}, e, a) : e); continue; }
+    const ex = Object.assign({ kind: 'main', sets: 3, reps: [10, 15], rir: '2', rest: 90, inc: 2, alts: [] }, a);
+    const i = a.after ? arr.findIndex(e => e.id === a.after) : -1;
+    if (i >= 0) arr.splice(i + 1, 0, ex); else arr.push(ex);
+  }
+  return arr;
+}
 function exList(k, w, adj) {
-  let list = PROGRAM.ex[k].map(resolve);
-  if (w && isBusy(w) && k === 'lowerA') list = list.concat(PROGRAM.ex.lowerB.filter(e => e.id === 'cableLat2' || e.id === 'facePull').map(resolve));
+  let list = dayEx(k).map(resolve);
+  if (w && isBusy(w) && k === 'lowerA') list = list.concat(dayEx('lowerB').filter(e => e.id === 'cableLat2' || e.id === 'facePull').map(resolve));
   if (adj === 'yellow' || adj === 'red') list = list.map(e => e.kind === 'warm' ? e : Object.assign({}, e, adj === 'yellow' ? { sets: Math.max(1, e.sets - 1) } : { sets: Math.max(1, Math.ceil(e.sets / 2)), rir: e.rir === '—' ? e.rir : '3', fail: false }));
   return list;
 }
@@ -792,6 +807,7 @@ async function watchSync(manual) {
   if (!manual && Date.now() - ((S.watch || {}).at || 0) < 45 * 60e3) return false;
   wdBusy = true;
   try {
+    try { await WD.atRaw({ cmd: 'SUT:' + Math.floor(Date.now() / 1000) }); } catch (e) { }
     const r = await WD.sync({ days: 7, hrDays: 2, log: !!manual });
     watchMerge(r);
     if (manual && ghOn() && S.settings.wdDebug) { try { await ghPut(`debug/watch-${Date.now()}.json`, b64(JSON.stringify(r, null, 1)), 'watch sync'); } catch (e) { } }
@@ -1495,10 +1511,15 @@ async function ghSync(loud) {
     // 4) وصفات زيادة من الكابتن
     const rf = await gh('GET', 'coach/recipes.json').catch(() => null);
     if (rf && rf.content) { try { const rs = JSON.parse(unb64(rf.content)); if (Array.isArray(rs)) S.coach.recipes = rs; } catch (e) { } }
+    // 4b) تعديلات البرنامج من الكابتن (من غير تحديث للتطبيق)
+    const pf = await gh('GET', 'coach/program.json').catch(() => null);
+    if (pf && pf.content) { try { const pr = JSON.parse(unb64(pf.content)); if (pr && typeof pr === 'object') { const changed = JSON.stringify(S.coach.program || {}) !== JSON.stringify(pr); S.coach.program = pr; if (changed) S.coach.progNew = pr.note || 'الكابتن عدّل برنامجك'; } } catch (e) { } }
     // 5) رسايل الكابتن
     const f = await gh('GET', 'coach/messages.json');
     if (f && f.content) { const msgs = JSON.parse(unb64(f.content)); if (Array.isArray(msgs)) { const old = (S.coach.msgs || []).length; S.coach.msgs = msgs.slice(-60); if (msgs.length > old && S.coach.seen !== msgs[msgs.length - 1].date) S.coach.unread = true; } }
-    S.settings.ghLast = Date.now(); save(true); if (loud) toast('اتزامن ✓');
+    S.settings.ghLast = Date.now(); save(true);
+    if (S.coach.progNew) { const msg = S.coach.progNew; delete S.coach.progNew; save(true); setTimeout(() => toast('🏋️ ' + msg), 400); }
+    else if (loud) toast('اتزامن ✓');
   } catch (e) { S.settings.ghErr = String(e.message || e); save(true); if (loud) toast(S.settings.ghErr); }
   finally { ghBusy = false; if ($('#player').hidden && $('#sheet').hidden) render(); }
 }
@@ -2017,12 +2038,15 @@ function infoSheet(ex, dark) {
     <p style="line-height:1.8;margin-top:14px">${esc(ex.note)}</p>
     ${ex.baseName ? `<p class="muted small">ده بديل لـ: ${esc(ex.baseName)}</p>` : ''}
     <b>خلّي بالك</b><ul class="cues">${ex.cues.map(c => `<li>${esc(c)}</li>`).join('')}</ul>
+    ${ex.warmup ? `<div class="section-t">سخّن له الأول</div><p style="line-height:1.9">${esc(ex.warmup)}</p>` : ''}
+    ${ex.anatomy ? `<div class="section-t">إيه اللي بيحصل في جسمك 🫀</div><p style="line-height:1.9">${esc(ex.anatomy)}</p>` : ''}
+    ${ex.fixes ? `<div class="section-t">بيعالج إيه في نقط ضعفك</div><p style="line-height:1.9">${esc(ex.fixes)}</p>` : ''}
     <a class="yt" href="https://www.youtube.com/results?search_query=${q}" target="_blank" rel="noopener">▶ فيديو على يوتيوب</a>
     ${ex.img ? `<p class="muted small mt">الصور من free-exercise-db (ملكية عامة).</p>` : ''}`);
 }
 
 function swapSheet(dk, id, after) {
-  const ex = PROGRAM.ex[dk].find(e => e.id === id); const cur = S.swaps[id] || 0;
+  const ex = dayEx(dk).find(e => e.id === id); const cur = S.swaps[id] || 0;
   const opt = (name, en, img, i) => `<button class="alt ${cur === i ? 'on' : ''}" data-i="${i}"><span class="thumb sm">${img ? `<img src="media/${img}/0.jpg" alt="">` : `<span class="noimg">${esc(en)}</span>`}</span><span><b>${esc(name)}</b><small>${esc(en)}${i === 0 ? ' · الأساسي' : ''}</small></span></button>`;
   openSheet(sheetHead('تغيير التمرين', esc(ex.name)) + `<p class="muted small">اختار البديل لو الجهاز مشغول أو الحركة بتوجع. سجلّ كل بديل بيتحفظ لوحده.</p>
     ${opt(ex.name, ex.en, ex.img, 0)}${ex.alts.map((a, i) => opt(a.name, a.en, a.img, i + 1)).join('')}`, p => {
@@ -2187,7 +2211,7 @@ function tickPlayer() {
     const lb = $('#rLeft'), fg = $('#rFg');
     if (lb) lb.textContent = clock(left);
     if (fg) fg.style.strokeDashoffset = String(754 * (1 - Math.max(0, left) / P.rest.total));
-    if (left <= 0) { vibrate([300, 120, 300]); endRest(); }
+    if (left <= 0) { vibrate([300, 120, 300]); if (P.rest && !P.rest.buzzed) { P.rest.buzzed = true; wMsg('⏱ خلصت الراحة — يلا السِت الجاي'); } endRest(); }
   }
 }
 function endRest() { restCancel(); if (!P) return; const adv = P.rest && P.rest.advance; P.rest = null; if (adv) P.idx = Math.min(P.idx + 1, exList(P.dk, P.w, P.adj).length - 1); S.active = P; save(); drawPlayer(); }

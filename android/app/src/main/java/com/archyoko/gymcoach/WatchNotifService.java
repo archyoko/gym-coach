@@ -145,6 +145,8 @@ public class WatchNotifService extends NotificationListenerService {
             if (title.isEmpty() && text.isEmpty()) return;
 
             boolean self = pkg.equals(getPackageName());
+            // تنبيه نهاية الراحة بيتبعت للساعة مباشرة من التطبيق، فمنعدّيش الإشعار عشان ميرنّش مرتين
+            if (self && title.startsWith("خلصت الراحة")) return;
             JSONObject apps = c.optJSONObject("apps");
             boolean allowed;
             if (self) allowed = c.optBoolean("self", true);
