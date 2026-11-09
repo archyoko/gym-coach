@@ -1781,14 +1781,15 @@ function notifSheet() {
   openSheet(sheetHead('الإشعارات') + `
     <p style="line-height:1.8">الكابتن بيفكّرك: الوزن الصبح، الكرياتين، وجبة الشغل، تمرين النهارده، تجهيز العلب، يوم المحاضرة، جمعة ماما، تقرير الجمعة، والنوم. وعداد الراحة بيرن حتى لو الموبايل مقفول.</p>
     <button class="btn ${S.settings.notif ? 'ghost' : 'red'} block" id="n1">${S.settings.notif ? '✓ الإشعارات شغالة – اضغط تقفلها' : 'شغّل الإشعارات'}</button>
-    <button class="btn ghost block mt sm" id="n2">اسمح بالتنبيه في الميعاد بالظبط (لعداد الراحة)</button>
-    <p class="muted small mt">لو الإشعارات مش بتوصل: إعدادات الموبايل ← التطبيقات ← Lifestyle ← البطارية ← "بدون قيود".</p>`, p => {
+    <button class="btn ghost block mt sm" id="n2">🔋 اشتغل والموبايل نايم (البطارية بدون قيود)</button>
+    <p class="muted small mt" id="n2s"></p>`, p => {
+    (async () => { try { const r = await WD.batteryStatus(); $('#n2s', p).textContent = r.free ? '✓ البطارية بدون قيود – عداد الراحة هيوصل' : 'اضغط الزرار ← اختار "سماح"'; if (r.free) $('#n2', p).style.display = 'none'; } catch (e) { } })();
     $('#n1', p).onclick = async () => {
       if (!LN) { toast('شغال في تطبيق الأندرويد بس'); return; }
       if (!S.settings.notif) { try { const r = await LN.requestPermissions(); if (r.display !== 'granted') { toast('الإذن اترفض – فعّله من إعدادات التطبيق'); return; } } catch (e) { } }
       S.settings.notif = !S.settings.notif; save(); await scheduleReminders(); closeSheet(); toast(S.settings.notif ? 'اتفعّلت ✓' : 'اتقفلت');
     };
-    $('#n2', p).onclick = async () => { try { await LN.changeExactNotificationSetting(); } catch (e) { toast('مش محتاج – متفعّل'); } };
+    $('#n2', p).onclick = async () => { try { await WD.askBattery(); closeSheet(); } catch (e) { toast('مقدرتش أفتحها'); } };
   });
 }
 

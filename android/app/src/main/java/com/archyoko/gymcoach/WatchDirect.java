@@ -2,6 +2,7 @@ package com.archyoko.gymcoach;
 
 import android.Manifest;
 import android.content.ComponentName;
+import android.content.Context;
 import android.content.Intent;
 import android.os.Build;
 import android.provider.Settings;
@@ -150,6 +151,26 @@ public class WatchDirect extends Plugin {
         JSObject c = call.getObject("cfg", new JSObject());
         getContext().getSharedPreferences("watchdirect", 0).edit().putString("fwd", c.toString()).apply();
         WatchLink.get(getContext()).setKeepAlive(c.optBoolean("on", false) && WatchNotifService.running);
+        call.resolve();
+    }
+
+    @PluginMethod public void batteryStatus(PluginCall call) {
+        JSObject r = new JSObject();
+        android.os.PowerManager pm = (android.os.PowerManager) getContext().getSystemService(Context.POWER_SERVICE);
+        r.put("free", pm != null && pm.isIgnoringBatteryOptimizations(getContext().getPackageName()));
+        call.resolve(r);
+    }
+
+    @PluginMethod public void askBattery(PluginCall call) {
+        try {
+            Intent i = new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, android.net.Uri.parse("package:" + getContext().getPackageName()));
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            getContext().startActivity(i);
+        } catch (Exception e) {
+            Intent i = new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS);
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            getContext().startActivity(i);
+        }
         call.resolve();
     }
 
