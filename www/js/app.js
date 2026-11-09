@@ -493,7 +493,11 @@ function history(lk) {
 }
 function lastSession(lk, exceptKey) {
   const byKey = {};
-  for (const [key, s] of Object.entries(S.logs)) if (key !== exceptKey && s.ex[lk] && s.ex[lk].length) byKey[key] = s;
+  for (const [key, s] of Object.entries(S.logs)) {
+    if (key === exceptKey) continue;
+    const workSets = (s.ex[lk] || []).filter(x => !x.warm);
+    if (workSets.length) byKey[key] = { date: s.date, ex: { [lk]: workSets } };
+  }
   const keys = Object.keys(byKey).sort((a, b) => byKey[b].date.localeCompare(byKey[a].date));
   return keys.length ? { date: byKey[keys[0]].date, sets: byKey[keys[0]].ex[lk] } : null;
 }
@@ -2164,7 +2168,10 @@ function logSheet(w, dk, ex, onSaved, editRef) {
   const quick = [...new Set([base - 2 * inc, base - inc, base, base + inc, base + 2 * inc].filter(x => x > 0).map(r1))];
   const hist = history(ex.lk);
   const showPain = PAIN_IDS.has(ex.id) || ex.pain;
-  openSheet(sheetHead(esc(ex.name), `تسجيل المجموعة ${editRef ? '(تعديل)' : cur.length + 1 + ' من ' + ex.sets} · ${dayByKey(dk).title}`) + `
+  const warmSets = cur.filter(s => s.warm).length;
+  const workSets = cur.filter(s => !s.warm).length;
+  const setLabel = editRef ? '(تعديل)' : (workSets < ex.sets ? `${workSets + 1} من ${ex.sets}` : `مجموعة زيادة`);
+  openSheet(sheetHead(esc(ex.name), `تسجيل المجموعة ${setLabel} · ${dayByKey(dk).title}`) + `
     ${timed ? `<label class="field"><span>${unitTxt(ex)}</span><input id="lR" class="inp num" inputmode="numeric" value="${rv}" placeholder="${ex.reps[1]}"></label>`
       : `<div class="grid2"><label class="field"><span>الوزن (كجم)</span><input id="lW" class="inp num" inputmode="decimal" value="${wv}" placeholder="0"></label><label class="field"><span>العدات</span><input id="lR" class="inp num" inputmode="numeric" value="${rv}" placeholder="${repsTxt(ex)}"></label></div>
          <div class="quick">${quick.map(q => `<button data-q="${q}"><span class="num">${fmt(q, 2)}</span> كجم</button>`).join('')}</div>`}
@@ -2172,8 +2179,9 @@ function logSheet(w, dk, ex, onSaved, editRef) {
     ${showPain ? `<label class="field"><span>الوجع (0 = مفيش)</span></label><div class="pain">${[0, 1, 2, 3, 4, 6].map(n => `<button data-p="${n}" class="${pain === n ? 'on' : ''} ${n > 3 ? 'hi' : ''}">${n === 6 ? '4+' : n}</button>`).join('')}</div>` : ''}
     ${sug ? `<div class="sugg">🧢 ${sug.txt}${sug.plateau ? `<button class="btn ghost block mt sm" id="plGo">غيّر النطاق لـ ${sug.plateau.next[0]}–${sug.plateau.next[1]}</button>` : ''}${ex.baseReps ? `<button class="link small" id="plReset" style="display:block;margin-top:8px">رجّع النطاق الأصلي ${ex.baseReps[0]}–${ex.baseReps[1]}</button>` : ''}</div>` : ''}
     <button class="btn red block mt" id="lSave">${editRef ? 'حفظ التعديل' : 'حفظ المجموعة'}</button>
+    ${!editRef ? `<button class="btn ghost block" id="lWarm" style="margin-top:8px">🔥 حفظ كمجموعة تسخين</button>` : ''}
     <div class="hist"><div class="hist-h"><span>السجل</span><span class="num">${hist.length} سجلات</span></div>
-    ${hist.length ? hist.slice(0, 40).map((s, idx) => `<div class="hrow"><span class="d num">${s.date || ''}</span><span class="v">${timed ? `${s.r} ${unitTxt(ex)}` : `<span class="num">${fmt(s.w, 2)}</span> كجم × <span class="num">${s.r}</span>`}<small>RIR ${s.rir ?? '—'}${s.p != null ? ` · وجع ${s.p}` : ''}</small></span><button class="mini" data-ed="${idx}" aria-label="تعديل">${ICON.edit}</button><button class="mini del" data-del="${idx}" aria-label="مسح">${ICON.trash}</button></div>`).join('')
+    ${hist.length ? hist.slice(0, 40).map((s, idx) => `<div class="hrow"><span class="d num">${s.date || ''}</span><span class="v">${s.warm ? `<span style="color:var(--warn)">🔥 تسخين</span> <small>${timed ? `${s.r} ${unitTxt(ex)}` : `${fmt(s.w, 2)} كجم × ${s.r}`}</small>` : timed ? `${s.r} ${unitTxt(ex)}` : `<span class="num">${fmt(s.w, 2)}</span> كجم × <span class="num">${s.r}</span>`}${s.warm ? '' : `<small>RIR ${s.rir ?? '—'}${s.p != null ? ` · وجع ${s.p}` : ''}</small>`}</span><button class="mini" data-ed="${idx}" aria-label="تعديل">${ICON.edit}</button><button class="mini del" data-del="${idx}" aria-label="مسح">${ICON.trash}</button></div>`).join('')
       : '<p class="muted small">لسه مفيش سجل للتمرين ده.</p>'}</div>`, p => {
     p.querySelectorAll('[data-q]').forEach(b => b.onclick = () => { $('#lW', p).value = b.dataset.q; });
     const plg = $('#plGo', p); if (plg) plg.onclick = () => { S.repOverride[ex.lk] = sug.plateau.next; save(); closeSheet(); toast('النطاق اتغيّر ✓'); onSaved && onSaved('edit'); };
@@ -2186,21 +2194,25 @@ function logSheet(w, dk, ex, onSaved, editRef) {
       else { b.dataset.sure = 1; b.style.background = 'var(--red)'; b.querySelector('svg').style.stroke = '#fff'; toast('اضغط تاني للمسح'); }
     });
     p.querySelectorAll('[data-ed]').forEach(b => b.onclick = () => { const s = hist[+b.dataset.ed]; closeSheet(); logSheet(w, dk, ex, onSaved, { key: s.key, i: s.i, set: S.logs[s.key].ex[ex.lk][s.i] }); });
-    $('#lSave', p).onclick = () => {
+    const doSave = (isWarm) => {
       const r = parseInt($('#lR', p).value);
       const wEl = $('#lW', p); const wt = wEl ? parseFloat(wEl.value.replace(',', '.')) : 0;
       if (isNaN(r) || r <= 0) { toast(timed ? 'اكتب الوقت' : 'اكتب عدد العدات'); return; }
       if (!timed && (isNaN(wt) || wt < 0)) { toast('اكتب الوزن'); return; }
       const set = { w: timed ? 0 : wt, r, rir: ex.rir === '—' ? null : rir, t: Date.now() };
+      if (isWarm) set.warm = true;
       if (pain != null) set.p = pain;
       if (editRef) { S.logs[editRef.key].ex[ex.lk][editRef.i] = Object.assign(editRef.set, set); save(); closeSheet(); onSaved && onSaved('edit'); toast('اتعدّل ✓'); return; }
       const s = ensureSess(w, dk); (s.ex[ex.lk] = s.ex[ex.lk] || []).push(set); save(); closeSheet();
       let warn = null;
-      if (pain != null && pain > 3) warn = 'pain';
-      else if (ex.noFail && rir === 0) warn = 'fail';
+      if (!isWarm && pain != null && pain > 3) warn = 'pain';
+      else if (!isWarm && ex.noFail && rir === 0) warn = 'fail';
       onSaved && onSaved('new', warn);
       if (warn === 'fail') toast('⚠️ ده تمرين فيه إصابة – المرة الجاية سيب عدتين', 3600);
+      if (isWarm) toast('🔥 تسخين اتسجّل');
     };
+    $('#lSave', p).onclick = () => doSave(false);
+    const lw = $('#lWarm', p); if (lw) lw.onclick = () => doSave(true);
   });
 }
 
@@ -2262,7 +2274,7 @@ function startPlayer(w, dk) {
   const adj = (w === curWeek() && (plannedDate(w, dk) <= today())) ? readiness().level : 'green';
   const list = exList(dk, w, adj);
   const sess = S.logs[sessKey(w, dk)];
-  let idx = list.findIndex(ex => !sess || !sess.ex[ex.lk] || sess.ex[ex.lk].length < ex.sets);
+  let idx = list.findIndex(ex => !sess || !sess.ex[ex.lk] || sess.ex[ex.lk].filter(s => !s.warm).length < ex.sets);
   if (idx < 0) idx = 0;
   const saved = S.active && S.active.w === w && S.active.dk === dk ? S.active : null;
   P = saved || { w, dk, idx, adj, started: Date.now(), pausedAt: null, pausedMs: 0, rest: null };
@@ -2303,11 +2315,11 @@ function afterSet(ex, kind, warn) {
   if (!P) return;
   const list = exList(P.dk, P.w, P.adj), sess = ensureSess(P.w, P.dk);
   if (kind !== 'new') { drawPlayer(); return; }
-  const n = (sess.ex[ex.lk] || []).length;
+  const n = (sess.ex[ex.lk] || []).filter(s => !s.warm).length;
   if (warn === 'pain') { painStop(ex); return; }
   const lastEx = P.idx === list.length - 1;
   if (n >= ex.sets) {
-    if (lastEx) { if (list.every(e => (sess.ex[e.lk] || []).length >= e.sets)) P.finished = true; drawPlayer(); return; }
+    if (lastEx) { if (list.every(e => (sess.ex[e.lk] || []).filter(s => !s.warm).length >= e.sets)) P.finished = true; drawPlayer(); return; }
     const nextEx = list[P.idx + 1];
     const sameSS = ex.ss && nextEx.ss === ex.ss;
     if (ex.rest && !sameSS) startRest(ex.rest, true); else { P.idx++; save(); drawPlayer(); }
@@ -2390,8 +2402,8 @@ function drawPlayer() {
   const root = $('#player'); if (!P) return;
   watchMusicSoon();
   const list = exList(P.dk, P.w, P.adj), ex = list[P.idx], sess = ensureSess(P.w, P.dk);
-  const doneSets = (sess.ex[ex.lk] || []).length;
-  const allDone = list.every(e => (sess.ex[e.lk] || []).length >= e.sets);
+  const doneSets = (sess.ex[ex.lk] || []).filter(s => !s.warm).length;
+  const allDone = list.every(e => (sess.ex[e.lk] || []).filter(s => !s.warm).length >= e.sets);
   const segs = list.map((e, i) => `<i class="${i === P.idx ? 'cur' : (sess.ex[e.lk] || []).length >= e.sets ? 'done' : ''}"></i>`).join('');
   const sug = suggest(ex, sessKey(P.w, P.dk));
   if (P.finished) {
