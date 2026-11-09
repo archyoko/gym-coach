@@ -17,6 +17,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
@@ -43,11 +45,23 @@ jobs:
       - name: Publish download link
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BEFORE: ${{ github.event.before }}
         run: |
+          RUN=${{ github.run_number }}
           MSG=$(git log -1 --pretty=%s | head -c 200 | sed 's/"/\\"/g')
-          echo "{\"code\": ${{ github.run_number }}, \"notes\": \"$MSG\"}" > version.json
-          cat version.json
+          # آخر نسخة APK فيها تغيير في "المحرّك" (أندرويد) – الواجهة بتتحدّث لوحدها من غير تسطيب
+          PREV=$(gh release download latest -p web.json -O - 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin).get('apk',0))" 2>/dev/null || echo 0)
+          NATIVE=1
+          if [ -n "$BEFORE" ] && [ "$PREV" != "0" ] && git cat-file -e "$BEFORE" 2>/dev/null; then
+            if git diff --quiet "$BEFORE" HEAD -- android package.json package-lock.json capacitor.config.json capacitor.config.ts; then NATIVE=0; fi
+          fi
+          if [ "$NATIVE" = "1" ]; then APK=$RUN; else APK=$PREV; fi
+          echo "native=$NATIVE apk=$APK run=$RUN"
+          echo "{\"code\": $APK, \"notes\": \"$MSG\"}" > version.json
+          echo "{\"code\": $RUN, \"apk\": $APK, \"notes\": \"$MSG\"}" > web.json
+          (cd android/app/src/main/assets/public && zip -qr ../../../../../../web.zip .)
+          cat version.json web.json; ls -la web.zip
           gh release delete latest --yes --cleanup-tag || true
-          gh release create latest gym-coach.apk version.json \
-            --title "كوتش الجيم – آخر نسخة (رقم ${{ github.run_number }})" \
+          gh release create latest gym-coach.apk version.json web.json web.zip \
+            --title "كوتش الجيم – آخر نسخة (رقم $RUN)" \
             --notes "نزّل gym-coach.apk وسطّبه على موبايلك. النسخة الجديدة بتتسطّب فوق القديمة وبياناتك بتفضل زي ما هي."

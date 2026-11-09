@@ -10,6 +10,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(WatchDirect.class);
         registerPlugin(Updater.class);
         registerPlugin(ScaleLink.class);
+        try { Updater.bootGuard(this); } catch (Exception ignored) { }
         super.onCreate(savedInstanceState);
         // حجم الخط الكبير في إعدادات الموبايل كان بيكبّر الكلام ويخليه يركب على بعض
         try { getBridge().getWebView().getSettings().setTextZoom(100); } catch (Exception ignored) { }

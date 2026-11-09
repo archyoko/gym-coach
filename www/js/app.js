@@ -731,8 +731,17 @@ try { if (native) WD = Cap.registerPlugin ? Cap.registerPlugin('WatchDirect') : 
 let UP = null;
 try { if (native) UP = Cap.registerPlugin ? Cap.registerPlugin('Updater') : Cap.Plugins.Updater; } catch (e) { UP = null; }
 let upInfo = null;
+/* تحديث الواجهة لوحده من غير تسطيب – مش وسط التمرين */
+async function liveCheck() {
+  if (!UP || !UP.live || P) return;
+  try {
+    const r = await UP.live();
+    if (r && r.applied) { S.settings.liveNote = r.notes || 'اتحدّث'; save(true); }
+  } catch (e) { }
+}
 async function upCheck(show) {
   if (!UP) { if (show) toast('ده شغال في تطبيق الأندرويد بس'); return; }
+  liveCheck();
   try { upInfo = await UP.check(); } catch (e) { if (show) toast(String(e.message || e)); return; }
   S.settings.upChecked = Date.now(); save();
   if (show || (upInfo.available && S.settings.upSeen !== upInfo.latest && $('#sheet').hidden && $('#player').hidden)) { S.settings.upSeen = upInfo.latest; save(); updateSheet(); }
@@ -1526,12 +1535,32 @@ async function ghSync(loud) {
     if (pf && pf.content) { try { const pr = JSON.parse(unb64(pf.content)); if (pr && typeof pr === 'object') { const changed = JSON.stringify(S.coach.program || {}) !== JSON.stringify(pr); S.coach.program = pr; if (changed) S.coach.progNew = pr.note || 'الكابتن عدّل برنامجك'; } } catch (e) { } }
     // 5) رسايل الكابتن
     const f = await gh('GET', 'coach/messages.json');
-    if (f && f.content) { const msgs = JSON.parse(unb64(f.content)); if (Array.isArray(msgs)) { const old = (S.coach.msgs || []).length; S.coach.msgs = msgs.slice(-60); if (msgs.length > old && S.coach.seen !== msgs[msgs.length - 1].date) S.coach.unread = true; } }
+    if (f && f.content) { const msgs = JSON.parse(unb64(f.content)); if (Array.isArray(msgs)) { const old = (S.coach.msgs || []).length; S.coach.msgs = msgs.slice(-60); if (msgs.length > old && S.coach.seen !== msgs[msgs.length - 1].date) S.coach.unread = true; autoApply(); } }
     S.settings.ghLast = Date.now(); save(true);
     if (S.coach.progNew) { const msg = S.coach.progNew; delete S.coach.progNew; save(true); setTimeout(() => toast('🏋️ ' + msg), 400); }
     else if (loud) toast('اتزامن ✓');
   } catch (e) { S.settings.ghErr = String(e.message || e); save(true); if (loud) toast(S.settings.ghErr); }
   finally { ghBusy = false; if ($('#player').hidden && $('#sheet').hidden) render(); }
+}
+/* تعديلات الكابتن (أكل/خطوات/عدات) بتتطبّق لوحدها أول ما توصل – من غير زرار */
+const msgKey = m => (m.date || '') + '|' + (m.title || '');
+function applyCoach(a) {
+  if (a.kcalDelta) { S.settings.kcal = Math.round(S.settings.kcal + a.kcalDelta); S.settings.riceAdj = riceAdj() + Math.round(a.kcalDelta / 1.3); }
+  if (a.steps) S.settings.steps = a.steps;
+  if (a.repOverride) Object.assign(S.repOverride, a.repOverride);
+  if (a.swaps) Object.assign(S.swaps, a.swaps);
+  if (a.busyWeek) { S.busy = S.busy || {}; S.busy[curWeek()] = 'coach'; }
+}
+function autoApply() {
+  const msgs = S.coach.msgs || [];
+  if (!S.coach.applied) { S.coach.applied = {}; msgs.forEach(m => { if (m.apply) S.coach.applied[msgKey(m)] = 1; }); return; }
+  const done = [];
+  for (const m of msgs) {
+    if (!m.apply || S.coach.applied[msgKey(m)]) continue;
+    applyCoach(m.apply); S.coach.applied[msgKey(m)] = 1; done.push(m.apply.label || m.title || '');
+    S.inbox.push({ t: Date.now(), text: `✓ اتطبّق تلقائي: ${m.apply.label || ''}` });
+  }
+  if (done.length) { S.coach.progNew = 'الكابتن عدّل: ' + done.join(' · '); scheduleReminders && scheduleReminders(); }
 }
 function coachMsgCard() {
   const msgs = S.coach.msgs || []; if (!msgs.length) return '';
@@ -1542,16 +1571,11 @@ function coachMsgsSheet() {
   const msgs = (S.coach.msgs || []).slice().reverse();
   S.coach.unread = false; if (msgs[0]) S.coach.seen = msgs[0].date; save();
   openSheet(sheetHead('رسايل الكابتن') + msgs.slice(0, 20).map((m, i) => `<div class="card pad mt"><small class="muted">${esc(m.date || '')}</small><h3 style="margin:4px 0 8px">${esc(m.title || '')}</h3><p style="line-height:1.8;margin:0;white-space:pre-wrap">${esc(m.body || '')}</p>
-    ${m.apply && !m.applied ? `<button class="btn red block mt sm" data-apply="${msgs.length - 1 - i}">طبّق التعديل: ${esc(m.apply.label || '')}</button>` : m.applied ? '<p class="up small" style="margin:8px 0 0">✓ اتطبّق</p>' : ''}</div>`).join('')
+    ${m.apply && !(S.coach.applied || {})[msgKey(m)] ? `<button class="btn red block mt sm" data-apply="${msgs.length - 1 - i}">طبّق التعديل: ${esc(m.apply.label || '')}</button>` : m.apply ? `<p class="up small" style="margin:8px 0 0">✓ اتطبّق: ${esc(m.apply.label || '')}</p>` : ''}</div>`).join('')
     + `<button class="btn ghost block mt" id="cmSay">رد على الكابتن</button>`, p => {
     p.querySelectorAll('[data-apply]').forEach(b => b.onclick = () => {
       const m = S.coach.msgs[+b.dataset.apply], a = m.apply || {};
-      if (a.kcalDelta) { S.settings.kcal = Math.round(S.settings.kcal + a.kcalDelta); S.settings.riceAdj = riceAdj() + Math.round(a.kcalDelta / 1.3); }
-      if (a.steps) S.settings.steps = a.steps;
-      if (a.repOverride) Object.assign(S.repOverride, a.repOverride);
-      if (a.swaps) Object.assign(S.swaps, a.swaps);
-      if (a.busyWeek) { S.busy = S.busy || {}; S.busy[curWeek()] = 'coach'; }
-      m.applied = true; S.inbox.push({ t: Date.now(), text: `✓ طبّقت: ${a.label || ''}` }); save(); ghSoon(3000); closeSheet(); render(); toast('اتطبّق ✓');
+      applyCoach(a); S.coach.applied = S.coach.applied || {}; S.coach.applied[msgKey(m)] = 1; S.inbox.push({ t: Date.now(), text: `✓ طبّقت: ${a.label || ''}` }); save(); ghSoon(3000); closeSheet(); render(); toast('اتطبّق ✓');
     });
     $('#cmSay', p).onclick = () => { closeSheet(); sayCoachSheet(); };
   });
@@ -2858,6 +2882,8 @@ if (LN) setupNotifActions();
 if (ghOn()) setTimeout(() => ghSync(), 2500);
 setTimeout(gymCheck, 3000);
 if (UP) setTimeout(() => upCheck(false), 4000);
+if (UP && UP.webOk) setTimeout(() => { try { UP.webOk(); } catch (e) { } }, 2500);
+if (S.settings.liveNote) { const n = S.settings.liveNote; delete S.settings.liveNote; save(true); setTimeout(() => toast('✨ التطبيق اتحدّث لوحده', 3500), 1200); }
 if (WD) setTimeout(watchSportCheck, 1200);
 if (WD) setTimeout(() => watchSync(false).then(ok => { if (ok && $('#player').hidden && $('#sheet').hidden) render(); }), 1500);
 if (WD && Zepp && !S.settings.zAutoOff) setTimeout(async () => { try { const st = await Zepp.getData(); if (st.auto !== false) await Zepp.setAuto({ enabled: false }); S.settings.zAutoOff = true; save(); } catch (e) { } }, 6000);
@@ -2871,6 +2897,7 @@ document.addEventListener('visibilitychange', () => {
   if (!P && ghOn() && Date.now() - (S.settings.ghLast || 0) > 30 * 60e3) ghSync();
   if (!P) setTimeout(gymCheck, 800);
   if (UP && !P && Date.now() - (S.settings.upChecked || 0) > 3 * 3600e3) setTimeout(() => upCheck(false), 2000);
+  else if (UP && !P && Date.now() - (S.settings.liveChecked || 0) > 20 * 60e3) { S.settings.liveChecked = Date.now(); setTimeout(liveCheck, 2000); }
   if (WD) setTimeout(watchSportCheck, 600);
   if (WD && !P) setTimeout(() => watchSync(false).then(ok => { if (ok && $('#player').hidden && $('#sheet').hidden) render(); }), 1200);
   if (P) { tickPlayer(); keepAwake(true); }

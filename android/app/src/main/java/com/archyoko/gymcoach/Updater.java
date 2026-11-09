@@ -110,6 +110,87 @@ public class Updater extends Plugin {
         }).start();
     }
 
+    // ---------------- تحديث الواجهة من غير تسطيب (live update) ----------------
+    static final String LIVE = "live_update";
+    static final String CAP_PREFS = "CapWebViewSettings", CAP_PATH = "serverBasePath";
+
+    /** النسخة اللي شغالة دلوقتي من الواجهة. لو اتسطّب APK جديد، Capacitor بيرجع للنسخة اللي جواه. */
+    private long webCode() {
+        android.content.SharedPreferences p = getContext().getSharedPreferences(LIVE, 0);
+        if (p.getLong("webApk", -1) != myCode()) return myCode();
+        return p.getLong("webCode", myCode());
+    }
+
+    @PluginMethod public void webOk(PluginCall call) {
+        getContext().getSharedPreferences(LIVE, 0).edit().putInt("boots", 0).apply();
+        call.resolve(new JSObject().put("web", webCode()).put("apk", myCode()));
+    }
+
+    @PluginMethod public void live(PluginCall call) {
+        new Thread(() -> {
+            try {
+                HttpURLConnection c = open(BASE + "web.json?t=" + System.currentTimeMillis());
+                InputStream in = c.getInputStream();
+                ByteArrayOutputStream bo = new ByteArrayOutputStream();
+                byte[] buf = new byte[65536]; int n;
+                while ((n = in.read(buf)) > 0) bo.write(buf, 0, n);
+                in.close();
+                JSONObject j = new JSONObject(bo.toString("UTF-8"));
+                long code = j.optLong("code", 0), need = j.optLong("apk", Long.MAX_VALUE);
+                android.content.SharedPreferences lp = getContext().getSharedPreferences(LIVE, 0);
+                JSObject r = new JSObject().put("code", code).put("need", need).put("web", webCode()).put("notes", j.optString("notes", ""));
+                if (code <= webCode() || myCode() < need || code == lp.getLong("bad", -1)) { call.resolve(r.put("applied", false)); return; }
+
+                File root = new File(getContext().getFilesDir(), "live");
+                File dir = new File(root, String.valueOf(code));
+                deleteTree(dir); dir.mkdirs();
+                HttpURLConnection z = open(BASE + "web.zip?t=" + System.currentTimeMillis());
+                java.util.zip.ZipInputStream zin = new java.util.zip.ZipInputStream(z.getInputStream());
+                java.util.zip.ZipEntry e;
+                String base = dir.getCanonicalPath() + File.separator;
+                while ((e = zin.getNextEntry()) != null) {
+                    File out = new File(dir, e.getName());
+                    if (!out.getCanonicalPath().startsWith(base)) throw new Exception("zip path");
+                    if (e.isDirectory()) { out.mkdirs(); continue; }
+                    out.getParentFile().mkdirs();
+                    FileOutputStream fo = new FileOutputStream(out);
+                    while ((n = zin.read(buf)) > 0) fo.write(buf, 0, n);
+                    fo.close();
+                }
+                zin.close();
+                if (!new File(dir, "index.html").exists() || !new File(dir, "js/app.js").exists()) { deleteTree(dir); throw new Exception("ملف التحديث ناقص"); }
+
+                String path = dir.getAbsolutePath();
+                getContext().getSharedPreferences(CAP_PREFS, 0).edit().putString(CAP_PATH, path).commit();
+                lp.edit().putLong("webCode", code).putLong("webApk", myCode()).putInt("boots", 0).commit();
+                File[] old = root.listFiles();
+                if (old != null) for (File f : old) if (!f.getName().equals(String.valueOf(code))) deleteTree(f);
+                call.resolve(r.put("applied", true));
+                new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> { try { getBridge().setServerBasePath(path); } catch (Exception ignored) { } }, 1500);
+            } catch (Exception e) { call.reject("التحديث وقف: " + e.getMessage()); }
+        }).start();
+    }
+
+    static void deleteTree(File f) {
+        if (f == null || !f.exists()) return;
+        File[] k = f.listFiles();
+        if (k != null) for (File x : k) deleteTree(x);
+        f.delete();
+    }
+
+    /** حماية: لو الواجهة الجديدة فشلت تفتح 3 مرات ورا بعض، نرجع للنسخة اللي جوه التطبيق. */
+    static void bootGuard(android.content.Context ctx) {
+        android.content.SharedPreferences lp = ctx.getSharedPreferences(LIVE, 0);
+        android.content.SharedPreferences cp = ctx.getSharedPreferences(CAP_PREFS, 0);
+        String path = cp.getString(CAP_PATH, null);
+        if (path == null || path.isEmpty()) return;
+        int boots = lp.getInt("boots", 0) + 1;
+        if (boots >= 3) {
+            cp.edit().remove(CAP_PATH).commit();
+            lp.edit().putLong("bad", lp.getLong("webCode", -1)).remove("webCode").putInt("boots", 0).commit();
+        } else lp.edit().putInt("boots", boots).commit();
+    }
+
     // ---------------- فحص نظام الساعة (قراءة بس) ----------------
     static String md5(String s) throws Exception {
         java.security.MessageDigest d = java.security.MessageDigest.getInstance("MD5");
