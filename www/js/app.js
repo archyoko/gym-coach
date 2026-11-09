@@ -484,22 +484,38 @@ const restTxt = s => s >= 60 ? `${pad2(Math.floor(s / 60))}:${pad2(s % 60)}` : `
 const PAIN_IDS = new Set(['ropeHammer', 'legPress', 'legPress2', 'wallSit', 'legExt', 'legExt2', 'incDb', 'incMachine']);
 
 /* كل مجموعات تمرين معيّن عبر كل الجلسات */
-function history(lk) {
-  const out = [];
-  for (const [key, s] of Object.entries(S.logs)) {
-    (s.ex[lk] || []).forEach((set, i) => out.push(Object.assign({ key, date: s.date, i }, set)));
+/* نفس التمرين في أكتر من يوم (مثلاً رفرفة كيبل في Upper A وLower B) = سجل واحد مشترك */
+const EN_ALIAS = { 'hipabductionmachine': 'hipabduction', 'neutralgripinclinedb': 'neutralgripinclinedbpress', 'neutralgrippulldown': 'neutralgriplatpulldown', 'vbarpushdown': 'vbartricepspushdown' };
+const enKey = t => { const r = String(t || '').toLowerCase(), k = r.replace(/\(.*?\)/g, '').replace(/[^a-z0-9]/g, ''); return (EN_ALIAS[k] || k) + (/warm/.test(r) ? ':warm' : ''); };
+let _lkMap = null, _lkSig = '';
+function lkGroup(lk) {
+  const sig = JSON.stringify((S.coach && S.coach.program) || {});
+  if (!_lkMap || sig !== _lkSig) {
+    _lkSig = sig; const byLk = {}, byKey = {};
+    for (const k of Object.keys(PROGRAM.ex)) for (const e of dayEx(k)) {
+      [[e.id, e.en], ...(e.alts || []).map((a, i) => [e.id + '@' + (i + 1), a.en])].forEach(([l, en]) => { const key = enKey(en); if (!key) return; byLk[l] = key; (byKey[key] = byKey[key] || new Set()).add(l); });
+    }
+    _lkMap = { byLk, byKey };
   }
-  return out.sort((a, b) => (b.date || '').localeCompare(a.date || '') || a.i - b.i);
+  const key = _lkMap.byLk[lk];
+  return key ? [..._lkMap.byKey[key]] : [lk];
+}
+function history(lk) {
+  const out = [], lks = lkGroup(lk);
+  for (const [key, s] of Object.entries(S.logs)) for (const l of lks) {
+    (s.ex[l] || []).forEach((set, i) => out.push(Object.assign({ key, date: s.date, i, lk: l }, set)));
+  }
+  return out.sort((a, b) => (b.date || '').localeCompare(a.date || '') || (a.t || 0) - (b.t || 0) || a.i - b.i);
 }
 function lastSession(lk, exceptKey) {
-  const byKey = {};
+  const byKey = {}, lks = lkGroup(lk);
   for (const [key, s] of Object.entries(S.logs)) {
     if (key === exceptKey) continue;
-    const workSets = (s.ex[lk] || []).filter(x => !x.warm);
-    if (workSets.length) byKey[key] = { date: s.date, ex: { [lk]: workSets } };
+    const workSets = lks.flatMap(l => s.ex[l] || []).filter(x => !x.warm);
+    if (workSets.length) byKey[key] = { date: s.date, sets: workSets, t: Math.max(...workSets.map(x => x.t || 0)) };
   }
-  const keys = Object.keys(byKey).sort((a, b) => byKey[b].date.localeCompare(byKey[a].date));
-  return keys.length ? { date: byKey[keys[0]].date, sets: byKey[keys[0]].ex[lk] } : null;
+  const keys = Object.keys(byKey).sort((a, b) => byKey[b].date.localeCompare(byKey[a].date) || byKey[b].t - byKey[a].t);
+  return keys.length ? { date: byKey[keys[0]].date, sets: byKey[keys[0]].sets } : null;
 }
 /* الكابتن: الوزن الجاي */
 function suggest(ex, curKey) {
@@ -2215,10 +2231,10 @@ function logSheet(w, dk, ex, onSaved, editRef) {
     p.querySelectorAll('[data-p]').forEach(b => b.onclick = () => { pain = +b.dataset.p; p.querySelectorAll('[data-p]').forEach(x => x.classList.toggle('on', x === b)); });
     p.querySelectorAll('[data-del]').forEach(b => b.onclick = () => {
       const s = hist[+b.dataset.del];
-      if (b.dataset.sure) { S.logs[s.key].ex[ex.lk].splice(s.i, 1); save(); closeSheet(); logSheet(w, dk, ex, onSaved); onSaved && onSaved('edit'); }
+      if (b.dataset.sure) { S.logs[s.key].ex[s.lk].splice(s.i, 1); save(); closeSheet(); logSheet(w, dk, ex, onSaved); onSaved && onSaved('edit'); }
       else { b.dataset.sure = 1; b.style.background = 'var(--red)'; b.querySelector('svg').style.stroke = '#fff'; toast('اضغط تاني للمسح'); }
     });
-    p.querySelectorAll('[data-ed]').forEach(b => b.onclick = () => { const s = hist[+b.dataset.ed]; closeSheet(); logSheet(w, dk, ex, onSaved, { key: s.key, i: s.i, set: S.logs[s.key].ex[ex.lk][s.i] }); });
+    p.querySelectorAll('[data-ed]').forEach(b => b.onclick = () => { const s = hist[+b.dataset.ed]; closeSheet(); logSheet(w, dk, ex, onSaved, { key: s.key, i: s.i, lk: s.lk, set: S.logs[s.key].ex[s.lk][s.i] }); });
     const doSave = (isWarm) => {
       const r = parseInt($('#lR', p).value);
       const wEl = $('#lW', p); const wt = wEl ? parseFloat(wEl.value.replace(',', '.')) : 0;
@@ -2227,7 +2243,7 @@ function logSheet(w, dk, ex, onSaved, editRef) {
       const set = { w: timed ? 0 : wt, r, rir: ex.rir === '—' ? null : rir, t: Date.now() };
       if (isWarm) set.warm = true;
       if (pain != null) set.p = pain;
-      if (editRef) { S.logs[editRef.key].ex[ex.lk][editRef.i] = Object.assign(editRef.set, set); save(); closeSheet(); onSaved && onSaved('edit'); toast('اتعدّل ✓'); return; }
+      if (editRef) { S.logs[editRef.key].ex[editRef.lk || ex.lk][editRef.i] = Object.assign(editRef.set, set); save(); closeSheet(); onSaved && onSaved('edit'); toast('اتعدّل ✓'); return; }
       const s = ensureSess(w, dk); (s.ex[ex.lk] = s.ex[ex.lk] || []).push(set); save(); closeSheet();
       let warn = null;
       if (!isWarm && pain != null && pain > 3) warn = 'pain';
