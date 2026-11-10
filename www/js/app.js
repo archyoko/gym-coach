@@ -454,6 +454,7 @@ function readiness(d = today()) {
 const READY_TXT = { green: ['🟢 جاهز', 'اتمرن عادي.'], yellow: ['🟡 نص نص', 'هشيل مجموعة من كل تمرين النهارده.'], red: ['🔴 مرهق', 'خفيف: نص المجموعات وRIR 3 – أو خليه راحة وامشي 30 دقيقة.'] };
 
 /* ================= نسبة الالتزام ================= */
+const ADH_W = { wo: .35, meals: .2, steps: .2, weight: .15, cr: .1 };
 function adherence(w) {
   const t = today(), start = addDays(S.settings.start, (w - 1) * 7), end = addDays(start, 6);
   if (t < start) return null;
@@ -468,13 +469,52 @@ function adherence(w) {
     weight: ratio(d => !!eff(d).w),
     cr: ratio(d => !!(S.days[d] || {}).creatine)
   };
-  const W = { wo: .35, meals: .2, steps: .2, weight: .15, cr: .1 };
+  const W = ADH_W;
   let sum = 0, wsum = 0; for (const [k, v] of Object.entries(parts)) if (v != null) { sum += v * W[k]; wsum += W[k]; }
   return wsum ? { score: Math.round(sum / wsum * 100), parts } : null;
 }
 function adherenceStreak() {
   let n = 0; for (let w = curWeek() - 1; w >= 1; w--) { const a = adherence(w); if (a && a.score >= 80) n++; else break; }
   return n;
+}
+function adherenceSheet(w) {
+  const a = adherence(w); if (!a) return;
+  const t = today(), set = S.settings, start = addDays(set.start, (w - 1) * 7), end = addDays(start, 6);
+  const DN = ['الحد', 'الاتنين', 'التلات', 'الأربع', 'الخميس', 'الجمعة', 'السبت'];
+  const INFO = {
+    wo: ['تمرين', 'التمارين اللي ميعادها جه وخلصتها'],
+    meals: ['أكل', 'الأيام اللي سجلت فيها وجبتين أو أكتر'],
+    steps: ['خطوات', `متوسط خطواتك من هدف ${fmt(set.steps)} (الأيام اللي خلصت بس)`],
+    weight: ['وزن', 'الأيام اللي اتوزنت فيها'],
+    cr: ['كرياتين', 'الأيام اللي أخدت فيها الكرياتين']
+  };
+  let wsum = 0; for (const k in a.parts) if (a.parts[k] != null) wsum += ADH_W[k];
+  const rows = Object.keys(ADH_W).map(k => {
+    const v = a.parts[k], pct = v == null ? null : Math.round(v * 100);
+    const lost = v == null ? 0 : Math.round((1 - v) * ADH_W[k] / wsum * 100);
+    const col = pct == null ? 'var(--line)' : pct >= 80 ? 'var(--ok)' : pct >= 60 ? 'var(--warn)' : 'var(--red)';
+    return `<div class="adh-row"><div class="adh-top"><b>${INFO[k][0]} <small>وزنه ${Math.round(ADH_W[k] * 100)}%</small></b><b class="num">${pct == null ? '—' : pct + '%'}</b></div>
+      <div class="adh-bar"><i style="width:${pct || 0}%;background:${col}"></i></div>
+      <small>${INFO[k][1]}${lost ? ` · بينزّل النسبة ${lost} نقطة` : ''}</small></div>`;
+  }).join('');
+  const days = []; for (let d = start; d <= end && d <= t; d = addDays(d, 1)) days.push(d);
+  const mk = ok => ok ? '<span style="color:var(--ok)">✓</span>' : '<span style="color:var(--red)">✗</span>';
+  const plan = weekPlan(w);
+  const grid = days.map(d => {
+    const m = Object.values((S.days[d] || {}).meals || {}).filter(Boolean).length, e = eff(d), st = e.steps || 0;
+    const wo = plan.find(x => x.date === d);
+    return `<tr><td>${DN[parseISO(d).getDay()]} ${short(d)}${d === t ? ' <small>(النهارده)</small>' : ''}</td>
+      <td>${wo ? (wo.done ? mk(true) : d < t ? mk(false) : '…') : '<small>راحة</small>'}</td>
+      <td>${mk(m >= 2)}</td><td class="num"><small>${st ? fmt(st) : '—'}</small></td><td>${mk(!!e.w)}</td><td>${mk(!!(S.days[d] || {}).creatine)}</td></tr>`;
+  }).join('');
+  const worst = Object.keys(ADH_W).filter(k => a.parts[k] != null).sort((x, y) => a.parts[x] * 1 - a.parts[y] * 1)[0];
+  openSheet(sheetHead('التزام الأسبوع', `الأسبوع ${w} · من ${short(start)} لـ ${short(end)}`) + `
+    <div class="adh-big"><b class="num">${a.score}%</b><small>الهدف 80% · ${a.score >= 80 ? `إنت فوق الهدف بـ${a.score - 80} نقطة` : `ناقصك ${80 - a.score} نقطة`}</small></div>
+    ${rows}
+    ${worst && a.parts[worst] < 1 ? `<p class="muted small">أكتر حاجة بتنزّل النسبة الأسبوع ده: <b>${INFO[worst][0]}</b>.</p>` : ''}
+    <div class="section-t" style="margin-top:18px">يوم بيوم</div>
+    <table class="adh-t"><thead><tr><th></th><th>تمرين</th><th>أكل</th><th>خطوات</th><th>وزن</th><th>كرياتين</th></tr></thead><tbody>${grid}</tbody></table>
+    <p class="muted small">النهارده بيتحسب بس في اللي خلصته، والخطوات بتتحسب من بكرة لما اليوم يقفل.</p>`);
 }
 const unitOf = ex => ex.unit || 'reps';
 const isTimed = ex => unitOf(ex) !== 'reps';
@@ -1955,8 +1995,8 @@ function renderHome(el) {
     ${cell('cWa', 'مية (لتر)', `${fmt(e.water, 2)}/${set.water}`, e.water >= set.water)}
     ${cell('cCr', 'كرياتين', e.creatine ? '✓' : '5 جم', e.creatine)}
   </div>
-  ${ad ? `<div class="adh mt"><div class="ring-s sm"><svg viewBox="0 0 84 84"><circle class="bg" cx="42" cy="42" r="36"/><circle class="fg" cx="42" cy="42" r="36" stroke="${ad.score >= 80 ? 'var(--ok)' : ad.score >= 60 ? 'var(--warn)' : 'var(--red)'}" stroke-dasharray="226.2" stroke-dashoffset="${226.2 * (1 - ad.score / 100)}"/></svg><b class="num">${ad.score}</b></div>
-    <div><b>التزام الأسبوع</b><small>${streak ? `🔥 ${streak} أسبوع ورا بعض فوق 80%` : 'الهدف 80%'}</small></div></div>` : ''}`;
+  ${ad ? `<button class="adh mt" id="adhBtn"><div class="ring-s sm"><svg viewBox="0 0 84 84"><circle class="bg" cx="42" cy="42" r="36"/><circle class="fg" cx="42" cy="42" r="36" stroke="${ad.score >= 80 ? 'var(--ok)' : ad.score >= 60 ? 'var(--warn)' : 'var(--red)'}" stroke-dasharray="226.2" stroke-dashoffset="${226.2 * (1 - ad.score / 100)}"/></svg><b class="num">${ad.score}</b></div>
+    <div><b>التزام الأسبوع</b><small>${streak ? `🔥 ${streak} أسبوع ورا بعض فوق 80%` : 'الهدف 80%'}</small></div><span class="adh-go">التفاصيل ›</span></button>` : ''}`;
   renderSyncLine();
   $('#tW').onclick = () => dayEntrySheet(t);
   $('#tSt').onclick = () => dayEntrySheet(t);
@@ -1969,6 +2009,7 @@ function renderHome(el) {
   $('#cCr').onclick = () => { day(t).creatine = !day(t).creatine; save(); render(); };
   $('#cWa').onclick = () => { const d = day(t); d.water = r1(((d.water || 0) + 0.25) > set.water + 1 ? 0 : (d.water || 0) + 0.25); save(); render(); };
   $('#cMe').onclick = () => { tab = 'food'; render(); };
+  const ab = $('#adhBtn'); if (ab) ab.onclick = () => adherenceSheet(w);
   const g = $('#goW'); if (g) g.onclick = () => { view.week = w; view.day = tdDay.key; startPlayer(w, tdDay.key); };
   const gm = $('#goMiss'); if (gm) gm.onclick = () => { view.week = w; view.day = tp.miss.d.key; startPlayer(w, tp.miss.d.key); };
   el.querySelectorAll('[data-feel]').forEach(b => b.onclick = () => { const x = day(t); x.feel = x.feel === b.dataset.feel ? undefined : b.dataset.feel; save(); render(); });
