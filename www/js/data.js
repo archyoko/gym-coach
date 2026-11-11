@@ -195,11 +195,10 @@ const SOURCES = [
 
 // بيانات قديمة من التطبيق الأول (أسبوع 1 من البرنامج القديم)
 const SEED = {
-  settings: { name: 'محمد', start: '2026-11-07', startWeight: 89.6, target: 80, kcal: 1910, protein: 168, steps: 8000, water: 3.5, weeks: 12, height: 170, age: 34, momStart: '2026-11-06', lectureDays: [0, 2], riceAdj: 0, notif: true },
+  settings: { name: 'محمد', start: '2026-11-07', startWeight: 88.65, target: 80, kcal: 1910, protein: 168, steps: 8000, water: 3.5, weeks: 12, height: 170, age: 34, momStart: '2026-11-06', lectureDays: [0, 2], riceAdj: 0, notif: true },
   days: {
     '2026-10-23': { w: 89, steps: 1500 },
-    '2026-10-31': { w: 88.65 },
-    '2026-11-06': { w: 89.6 }
+    '2026-10-31': { w: 88.65 }
   },
   logs: {
     'old-upper': { date: '2026-10-29', legacy: true, ex: {

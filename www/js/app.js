@@ -2992,6 +2992,8 @@ document.addEventListener('visibilitychange', () => {
   if (!P && native && S.settings.lastSync) { const m = (Date.now() - new Date(S.settings.lastSync)) / 6e4; if (m > 15) hcSync(false); }
 });
 try { fixBurnV2(); } catch (e) { }
+/* وزنة 89.6 يوم 6/11 كانت قيمة مبدئية مش وزنة حقيقية (محمد 2026-11-11): تتشال، ونقطة البداية 88.65 (آخر وزنة على الميزان 31/10) */
+try { const d6 = S.days['2026-11-06']; if (d6 && d6.w === 89.6 && !S.body['2026-11-06']) { delete d6.w; S.settings.startWeight = 88.65; save(); } } catch (e) { }
 // زرار الرجوع في أندرويد
 try {
   const App = native && (Cap.registerPlugin ? Cap.registerPlugin('App') : Cap.Plugins.App);
