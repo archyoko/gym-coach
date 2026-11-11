@@ -302,6 +302,8 @@ function resolve(ex) {
 }
 /* الثبات: آخر 3 حصص على مدى 3 أسابيع على الأقل من غير تقدّم في أحسن مجموعة محسوبة */
 function plateau(ex) {
+  return null; // معطّل: تعليق تلقائي مش متراجع علمياً (محمد 2026-11-11: مفيش تعليق في التطبيق غير المتراجع والمدروس)
+  // eslint-disable-next-line no-unreachable
   if (isTimed(ex) || ex.kind === 'warm' || ex.kind === 'rehab') return null;
   const byDate = {}; for (const s of history(ex.lk)) { const e = (+s.w || 0) * (1 + (+s.r || 0) / 30); byDate[s.date] = Math.max(byDate[s.date] || 0, e); }
   const ds = Object.keys(byDate).sort(); if (ds.length < 3) return null;
