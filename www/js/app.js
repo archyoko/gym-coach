@@ -300,11 +300,12 @@ function resolve(ex) {
   if (ov) r = Object.assign(r, { reps: ov, baseReps: ex.reps });
   return r;
 }
-/* الثبات: آخر 3 حصص من غير تقدّم في أحسن مجموعة محسوبة */
+/* الثبات: آخر 3 حصص على مدى 3 أسابيع على الأقل من غير تقدّم في أحسن مجموعة محسوبة */
 function plateau(ex) {
   if (isTimed(ex) || ex.kind === 'warm' || ex.kind === 'rehab') return null;
   const byDate = {}; for (const s of history(ex.lk)) { const e = (+s.w || 0) * (1 + (+s.r || 0) / 30); byDate[s.date] = Math.max(byDate[s.date] || 0, e); }
   const ds = Object.keys(byDate).sort(); if (ds.length < 3) return null;
+  if (diffDays(ds[ds.length - 1], ds[ds.length - 3]) < 21) return null; // الثبات لازم يبقى على 3 أسابيع على الأقل، مش 3 حصص ورا بعض
   const last3 = ds.slice(-3).map(d => byDate[d]);
   if (last3[2] > last3[0] * 1.01) return null;
   const [lo, hi] = ex.reps;
