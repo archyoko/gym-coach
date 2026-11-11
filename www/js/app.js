@@ -1563,7 +1563,7 @@ function dailySummary(d) {
   return { date: d, type: dayType(d), weight: e.w, steps: e.steps, active: e.active, burnEst: e.kcal, sleepMin: e.sleep, creatine: e.creatine, water: e.water, feel: x.feel,
     meals: x.meals || {}, recipes: x.recipes || null, choice: x.choice, extras: x.extras || [], intake: intake(d), note: x.note, body: b || null,
     readiness: readiness(d).level, sleepQ: (q => q ? { score: q.score, zepp: q.zepp, level: q.level, deep: q.z.deep, rem: q.z.rem, light: q.z.light, awake: q.z.awake, bed: q.z.bed, wake: q.z.wake, feel: x.sleepFeel } : null)(sleepQ(d)), photos: (S.mealPhotos[d] || []).map(m => ({ meal: m.meal, file: `photos/meals/${m.key.replace(/\|/g, '_')}.jpg` })),
-    sessions: ses.map(([k, s]) => ({ key: k, rpe: s.rpe, pain: s.painAreas, note: s.note, burn: s.burn, rest: restOf(s), min: s.end && s.start ? Math.round((s.end - s.start) / 6e4) : null, ex: Object.fromEntries(Object.entries(s.ex).map(([lk, a]) => [lk, a.map(z => [z.w, z.r, z.rir, z.p])])) })) };
+    sessions: ses.map(([k, s]) => ({ key: k, rpe: s.rpe, pain: s.painAreas, note: s.note, burn: s.burn, rest: restOf(s), min: s.end ? sessMin(s) : null, ex: Object.fromEntries(Object.entries(s.ex).map(([lk, a]) => [lk, a.map(z => [z.w, z.r, z.rir, z.p])])) })) };
 }
 async function ghSync(loud) {
   if (!ghOn() || ghBusy) return;
@@ -2331,8 +2331,27 @@ function restStats(sess, dk, w) {
 }
 /* بيرجّع الأرقام من السِتات الأصلية، فالحصص القديمة بتتصلّح كمان */
 function restOf(s) { try { if (s && s.dk && s.w) { const r = restStats(s, s.dk, s.w); if (r) return r; } } catch (e) { } return s && s.rest && s.rest.v === 2 ? s.rest : null; }
+/* مدة الحصة الحقيقية = من أول سِت لآخر سِت (±دقيقة). التايمر ممكن يبدأ بدري أو يتفتح بالغلط */
+function sessSpan(s) {
+  const ts = sessSets(s).map(x => x.t);
+  if (ts.length >= 2) return [Math.min(...ts) - 60000, Math.max(...ts) + 60000];
+  return [s.start || 0, s.end || Date.now()];
+}
+function sessMin(s) { const [a, b] = sessSpan(s); return a && b > a ? Math.round((b - a) / 6e4) : null; }
+/* مرة واحدة: يصلّح حرق وحصص اتحسبت من التايمر بدل أول/آخر سِت (علامة burn.v = 2) */
+function fixBurnV2() {
+  let ch = false;
+  for (const s of Object.values(S.logs || {})) {
+    try {
+      if (!s || !s.end || !s.ex || (s.burn && s.burn.v === 2) || sessSets(s).length < 2) continue;
+      const nb = sessBurn(s);
+      if (nb && (nb.src !== 'est' || !s.burn || s.burn.src === 'est')) { s.burn = Object.assign(nb, { v: 2 }); ch = true; if (s.date && S.health[s.date] && s.burn.src !== 'watch') { S.health[s.date].wkcal = nb.kcal; S.health[s.date].wmin = sessMin(s); } }
+    } catch (e) { }
+  }
+  if (ch) save();
+}
 function sessBurn(sess) {
-  const a = (sess.start || 0) / 1000, b = (sess.end || Date.now()) / 1000, W = S.watch || {};
+  const [sa, sb] = sessSpan(sess), a = sa / 1000, b = sb / 1000, W = S.watch || {};
   const kg = latestWeight(sess.date || today()), age = S.settings.age || 34;
   // 1) تمرين متسجّل على الساعة في نفس الوقت
   const ws = (W.workouts || []).filter(x => x.begin && x.end && x.end > a - 300 && x.begin < b + 300);
@@ -2348,10 +2367,10 @@ function sessBurn(sess) {
 async function afterWorkout(key) {
   const sess = S.logs[key]; if (!sess) return;
   if (WD) { S.watch = S.watch || {}; S.watch.at = 0; await watchSync(false); }
-  const burn = sessBurn(sess); if (burn) sess.burn = burn;
+  const burn = sessBurn(sess); if (burn) sess.burn = Object.assign(burn, { v: 2 });
   const [w, dk] = key.split('-').length > 1 ? [+key.split('-')[0].replace(/\D/g, ''), key.split('-').slice(1).join('-')] : [0, ''];
   try { const rs = restStats(sess, sess.dk || dk, sess.w || w); if (rs) sess.rest = rs; } catch (e) { }
-  if (burn && sess.date) { const h = (S.health[sess.date] = S.health[sess.date] || {}); if (!h.wkcal || burn.src !== 'watch') { h.wkcal = Math.max(h.wkcal || 0, burn.kcal); h.wmin = Math.round(((sess.end || Date.now()) - sess.start) / 6e4); } }
+  if (burn && sess.date) { const h = (S.health[sess.date] = S.health[sess.date] || {}); if (!h.wkcal || burn.src !== 'watch') { h.wkcal = Math.max(h.wkcal || 0, burn.kcal); h.wmin = sessMin(sess); } }
   save();
   if (burn) {
     const src = { watch: 'من الساعة', hr: 'من نبض الساعة', est: 'تقدير' }[burn.src];
@@ -2705,7 +2724,7 @@ function weeklyReport() {
   for (const d of DAYS) {
     const s = S.logs[sessKey(wk, d.key)];
     if (!s || !Object.values(s.ex).some(a => a.length)) { lines.push(`- ${d.title}: ❌ متعملش`); continue; }
-    lines.push(`- ${d.title} (${s.date}${s.end && s.start ? ` · ${Math.round((s.end - s.start) / 6e4)} د` : ''}):`);
+    lines.push(`- ${d.title} (${s.date}${s.end && sessMin(s) ? ` · ${sessMin(s)} د` : ''}):`);
     for (const ex of exList(d.key)) { const a = s.ex[ex.lk]; if (!a || !a.length) continue; lines.push(`  - ${ex.name}: ${a.map(x => isTimed(ex) ? `${x.r}${unitOf(ex) === 'sec' ? 'ث' : 'د'}` : `${x.w}×${x.r}${x.rir != null ? ` @${x.rir}` : ''}${x.p != null ? ` وجع${x.p}` : ''}`).join(' | ')}`); }
     (s.flags || []).forEach(f => lines.push(`  - ⚠️ وقفت ${f.ex} بسبب الوجع`));
   }
@@ -2972,6 +2991,7 @@ document.addEventListener('visibilitychange', () => {
   if (LN && !P) scheduleReminders();
   if (!P && native && S.settings.lastSync) { const m = (Date.now() - new Date(S.settings.lastSync)) / 6e4; if (m > 15) hcSync(false); }
 });
+try { fixBurnV2(); } catch (e) { }
 // زرار الرجوع في أندرويد
 try {
   const App = native && (Cap.registerPlugin ? Cap.registerPlugin('App') : Cap.Plugins.App);
