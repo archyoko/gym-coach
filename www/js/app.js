@@ -2601,6 +2601,36 @@ function painStop(ex) {
 }
 
 /* ================= التقدّم ================= */
+let wAll = false;
+/* مرة واحدة: يدخّل تاريخ وزنات OKOK (من غير ما يمسح أي قراءة موجودة) */
+function importOkokHistory() {
+  if (typeof OKOK_HISTORY === 'undefined' || S.settings.okokHist === 1) return;
+  for (const [d, weight, bmi, fat, muscleKg, water, protein, bone] of OKOK_HISTORY) {
+    if (!S.body[d]) S.body[d] = { weight, bmi, fat, fatKg: Math.round(weight * fat) / 100, muscleKg, water, protein, bone, src: 'okok' };
+    const h = (S.health[d] = S.health[d] || {}); if (!h.oweight && !(S.days[d] && S.days[d].w)) h.oweight = weight;
+  }
+  S.settings.okokHist = 1; save();
+}
+function weightChartAll() {
+  const ds = [...new Set([...Object.keys(S.days), ...Object.keys(S.health), ...Object.keys(S.body)])].sort();
+  const pts = ds.map(d => ({ d, w: eff(d).w })).filter(p => p.w);
+  if (pts.length < 2) return '<div class="empty">مفيش وزنات كفاية للرسم.</div>';
+  const t0 = new Date(pts[0].d).getTime(), t1 = new Date(pts[pts.length - 1].d).getTime();
+  const tgt = S.settings.target, ws = pts.map(p => p.w);
+  const lo = Math.floor(Math.min(...ws, tgt) - 1), hi = Math.ceil(Math.max(...ws) + 1);
+  const W = 340, H = 180, L = 34, R = 8, T = 10, B = 24;
+  const x = d => L + (new Date(d).getTime() - t0) * (W - L - R) / Math.max(1, t1 - t0), y = v => T + (hi - v) * (H - T - B) / (hi - lo);
+  const step = Math.max(1, Math.round((hi - lo) / 5)), ticks = []; for (let v = lo; v <= hi; v += step) ticks.push(v);
+  const line = pts.map(p => `${x(p.d).toFixed(1)},${y(p.w).toFixed(1)}`).join(' ');
+  const a = pts[0], z = pts[pts.length - 1], mid = pts[Math.floor(pts.length / 2)];
+  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="رسم الوزن من أبريل">
+    ${ticks.map(v => `<line class="grid" x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}"/><text x="${L - 6}" y="${y(v) + 4}" text-anchor="end">${v}</text>`).join('')}
+    <line class="tgt" x1="${L}" x2="${W - R}" y1="${y(tgt)}" y2="${y(tgt)}"/>
+    <polyline class="avg" points="${line}"/>
+    ${pts.map(p => `<circle class="raw" cx="${x(p.d)}" cy="${y(p.w)}" r="2.4"/>`).join('')}
+    ${[a, mid, z].map(p => `<text x="${Math.min(W - 24, Math.max(L + 8, x(p.d)))}" y="${H - 6}" text-anchor="middle">${short(p.d)}</text>`).join('')}
+  </svg><div class="small muted" style="margin-top:6px">${fmt(a.w, 1)} ← ${fmt(z.w, 1)} كجم (${z.w - a.w <= 0 ? '−' : '+'}${fmt(Math.abs(z.w - a.w), 1)}) · ${pts.length} قراءة · ┅ الهدف</div>`;
+}
 function weightChart() {
   const t = today(), N = 56;
   const pts = []; for (let i = N - 1; i >= 0; i--) { const d = addDays(t, -i); const w = eff(d).w; pts.push({ d, w }); }
@@ -2658,7 +2688,7 @@ function renderProgress(el) {
     ${a.sleepHold ? `<div class="verdict warn mt"><h3>مش هنقلل سعرات دلوقتي 😴</h3><p>متوسط جودة نومك ${a.sleepAvg.avg}/100. التقليل والنوم وحش بيكسّر عضل بدل الدهون – نصلّح النوم الأول وبعدين نقلل.</p></div>` : ''}
     ${a.delta ? `<button class="btn red block mt" id="adaptGo">${a.delta > 0 ? `زوّد ${a.delta} سعر (${Math.round(a.delta / 1.3)} جم رز)` : `قلّل ${-a.delta} سعر (${Math.round(-a.delta / 1.3)} جم رز)`}</button><p class="muted small" style="margin:6px 0 0">التعديل محدود بـ 150 سعر في المرة عشان ميبقاش مفاجئ.</p>` : '<p class="up small" style="margin:8px 0 0">السعرات مظبوطة – مفيش تعديل ✓</p>'}
     ${S.settings.riceAdj ? `<button class="btn ghost block mt sm" id="adaptReset">رجّع الرز للأصل (${riceAdj() > 0 ? '+' : ''}${riceAdj()} جم)</button>` : ''}</div>`; })()}
-  <div class="section-t">الوزن – آخر 8 أسابيع</div><div class="card pad">${weightChart()}<button class="link small" id="wEdit" style="margin-top:8px">تعديل الأوزان</button></div>
+  <div class="section-t">${wAll ? 'الوزن – من أبريل' : 'الوزن – آخر 8 أسابيع'}</div><div class="card pad">${wAll ? weightChartAll() : weightChart()}<div style="display:flex;gap:16px;margin-top:8px"><button class="link small" id="wAll">${wAll ? 'آخر 8 أسابيع' : 'من أبريل'}</button><button class="link small" id="wEdit">تعديل الأوزان</button></div></div>
   <div class="section-t">أسبوع بأسبوع</div>
   <div class="card pad scroll-x">${rows.length ? '' : '<p class="muted small" style="margin:0 0 8px">الجدول هيبدأ مع أول أسبوع في البرنامج.</p>'}<table class="t"><thead><tr><th>الأسبوع</th><th>متوسط الوزن</th><th>الخطوات</th><th>النوم</th><th>تمارين</th></tr></thead><tbody>
   ${rows.map((r, i) => { const prev = rows[i + 1]; const ch = prev && prev.aw && r.aw ? r.aw - prev.aw : null; return `<tr><td>${r.wk < 1 ? '—' : r.wk}</td><td>${r.aw ? fmt(r.aw, 1) : '—'} ${ch != null ? `<span class="${ch <= 0 ? 'up' : 'down'} small">${ch <= 0 ? '▼' : '▲'}${fmt(Math.abs(ch), 1)}</span>` : ''}</td><td>${r.st ? fmt(r.st) : '—'}</td><td>${r.sl ? (r.sl / 60).toFixed(1) + ' س' : '—'}${r.sq ? `<br><small class="muted">جودة ${r.sq}</small>` : ''}</td><td>${r.sessions}/4</td></tr>`; }).join('')}
@@ -2683,7 +2713,7 @@ function renderProgress(el) {
 
   <p class="muted small" style="text-align:center;margin:6px 0 0">بيفتح Claude على موبايلك والتقرير جاهز – اختار المحادثة دي وابعت.</p>`;
   $('#addBody').onclick = bodySheet;
-  $('#wEdit').onclick = weightsSheet;
+  $('#wEdit').onclick = weightsSheet; $('#wAll').onclick = () => { wAll = !wAll; render(); };
   const ag = $('#adaptGo'); if (ag) ag.onclick = () => applyAdaptive(adaptive().delta);
   const ar = $('#adaptReset'); if (ar) ar.onclick = () => { S.settings.kcal = Math.round(S.settings.kcal - riceAdj() * 1.3); S.settings.riceAdj = 0; save(); render(); toast('رجع للأصل ✓'); };
   $('#ckOpen').onclick = checkinSheet;
@@ -2992,6 +3022,7 @@ document.addEventListener('visibilitychange', () => {
   if (!P && native && S.settings.lastSync) { const m = (Date.now() - new Date(S.settings.lastSync)) / 6e4; if (m > 15) hcSync(false); }
 });
 try { fixBurnV2(); } catch (e) { }
+try { importOkokHistory(); } catch (e) { }
 /* وزنة 89.6 يوم 6/11 كانت قيمة مبدئية مش وزنة حقيقية (محمد 2026-11-11): تتشال، ونقطة البداية 88.65 (آخر وزنة على الميزان 31/10) */
 try { const d6 = S.days['2026-11-06']; if (d6 && d6.w === 89.6 && !S.body['2026-11-06']) { delete d6.w; S.settings.startWeight = 88.65; save(); } } catch (e) { }
 // زرار الرجوع في أندرويد
