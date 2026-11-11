@@ -212,7 +212,7 @@ function coachAsk(raw) {
     const pSrc = f.left.filter(m => m.p >= 20).map(m => `${m.title.replace('وجبة ', '')} (${m.p} جم)`);
     return { text: f.any
       ? `أكلت ${f.eatenP} جم بروتين من هدف ${f.planP}.\n${f.planP - f.eatenP > 0 ? `فاضلك ${f.planP - f.eatenP} جم${pSrc.length ? ` — هتلاقيهم في: ${pSrc.join('، ')}.` : '.'}` : 'وصلت للهدف 👏'}`
-      : `هدفك ${f.planP} جم بروتين في اليوم (حوالي 1.9 جم لكل كيلو — ممتاز للـ recomposition).\nأكبر مصادرك: الفراخ في العشا، الزبادي اليوناني، والبيض في الفطار. علّم على وجباتك وأقولك وصلت كام.` };
+      : `هدفك ${f.planP} جم بروتين في اليوم.\nأكبر مصادرك: الفراخ في العشا، الزبادي اليوناني، والبيض في الفطار. علّم على وجباتك وأقولك وصلت كام.` };
   }
   // 3) الوزن / التقدّم
   if (qHas(q, ['وزني', 'وزن', 'نزلت', 'تخن', 'خسيت', 'تقل', 'نحف', 'ماشي صح', 'ماشي كويس', 'شغال صح'])) {
@@ -220,8 +220,8 @@ function coachAsk(raw) {
     if (!a) { const w = latestWeight(d); return { text: `وزنك الحالي حوالي ${fmt(w, 1)} كجم، والهدف ${S.settings.target}.\nلسه بدري أحكم على السرعة — محتاج ~10 أيام وزن متتابعة. اتوزن كل صبح على الريق بعد الحمام، وأول ما يتجمّع متوسط أقولك السعرات مظبوطة ولا لأ.` }; }
     const wk = a.slopeWk;
     const verdict = wk > -0.2 ? `الوزن تقريباً واقف (${fmt(wk, 2)} كجم/أسبوع). لو فضل كده أسبوع تاني هنقلّل 150 سعر.`
-      : wk < -0.9 ? `بتنزل بسرعة (${fmt(-wk, 2)} كجم/أسبوع) — ده ممكن ياكل من العضل. هنزوّد رز شوية.`
-      : `بتنزل ${fmt(-wk, 2)} كجم في الأسبوع — ده بالظبط النطاق المثالي 👏 كمّل زي ما إنت.`;
+      : wk < -0.9 ? `بتنزل بسرعة (${fmt(-wk, 2)} كجم/أسبوع) — أسرع من المعدل المتفق عليه (0.4–0.7). هنزوّد رز شوية.`
+      : `بتنزل ${fmt(-wk, 2)} كجم في الأسبوع (المعدل المتفق عليه 0.4–0.7).`;
     return { text: `${verdict}\nحرقك التقديري ${fmt(a.tdee)} سعر، وبتاكل متوسط ${fmt(a.intakeAvg)}.\nدقة الحساب: ${a.conf} (${a.logged} يوم متعلّم).${a.sleepHold ? '\n⚠️ نومك قليل الأسبوع ده — مش هقلّل سعرات قبل ما نصلّح النوم.' : ''}` };
   }
   // 4) المية
@@ -232,19 +232,19 @@ function coachAsk(raw) {
   // 5) الخطوات
   if (qHas(q, ['خطوات', 'مشي', 'مشيت', 'steps', 'خطوه'])) {
     const st = eff(d).steps;
-    return { text: st != null ? `خطواتك النهارده ${fmt(st)} من هدف ${fmt(S.settings.steps)}.\n${st >= S.settings.steps ? 'عاش 👏' : `فاضلك ${fmt(S.settings.steps - st)} — نزلة 15 دقيقة بعد العشا بتجيب ~2,000.`}` : `هدفك ${fmt(S.settings.steps)} خطوة. الساعة بتسجّلهم لوحدها — افتح صفحة الساعة وزامن.` };
+    return { text: st != null ? `خطواتك النهارده ${fmt(st)} من هدف ${fmt(S.settings.steps)}.\n${st >= S.settings.steps ? 'عاش 👏' : `فاضلك ${fmt(S.settings.steps - st)} خطوة.`}` : `هدفك ${fmt(S.settings.steps)} خطوة. الساعة بتسجّلهم لوحدها — افتح صفحة الساعة وزامن.` };
   }
   // 6) المشروب / الكرياتين
-  if (qHas(q, ['كرياتين', 'creatine'])) return { text: `الكرياتين 5 جم كل يوم، حتى في الراحة. أيام التمرين موجود جوه مشروب التمرين، وأيام الراحة خده مع أي وجبة. الميعاد مش فارق، المهم تاخده يومياً.` };
-  if (qHas(q, ['المشروب', 'مشروب التمرين', 'pre workout', 'بري ورك'])) return { text: `مشروب التمرين (أيام التمرين بس) بيتشرب بدل المية في الجيم: 600 مل مية + 150 مل عصير برتقال + 7 جم عسل + نص لمونة + ربع معلقة ملح + 5 جم كرياتين. حوالي 93 سعر، من غير كافيين عشان النوم. قهوة الساعة 4 هي الـ pre بتاعك.` };
+  if (qHas(q, ['كرياتين', 'creatine'])) return { text: `إنت مش بتاخد كرياتين دلوقتي، والبرنامج ماشي من غيره. لو قررت تبدأ قولّي وأسجّل التاريخ.` };
+  if (qHas(q, ['المشروب', 'مشروب التمرين', 'pre workout', 'بري ورك'])) return { text: `مشروب التمرين (أيام التمرين بس) بيتشرب بدل المية في الجيم: 600 مل مية + 150 مل عصير برتقال + 7 جم عسل + نص لمونة + ربع معلقة ملح. حوالي 93 سعر، من غير كافيين. قهوة الساعة 4 هي الـ pre بتاعك.` };
   // 7) نوم
   if (qHas(q, ['نمت وحش', 'نمت قليل', 'مش نايم', 'تعبان', 'نومي وحش', 'صاحي', 'قلقان'])) {
-    const sq = sleepQ(addDays(d, 0)) || sleepQ(addDays(d, -1)); const tips = sleepTips(sq);
-    return { text: `${sq ? `نومك ${sq.score}/100. ` : ''}النهارده الجوع هيبقى أعلى شوية — خليك على البروتين كامل وزوّد خضار وسلطة (سعراتها قليلة) بدل ما تاكل زيادة.\n${tips.length ? 'نصيحة: ' + tips[0] : 'نام بدري النهارده نص ساعة، والموبايل بره السرير.'}` };
+    const sq = sleepQ(addDays(d, 0)) || sleepQ(addDays(d, -1));
+    return { text: `${sq ? `نومك ${sq.score}/100. ` : 'مفيش نوم متسجّل لسه. '}تمرين النهارده بيتظبط على جاهزيتك، والكابتن بيراجع نومك في رسالة الصبح.` };
   }
   // 8) جعان
   if (qHas(q, ['جعان', 'جوعان', 'جايعان', 'بموت من الجوع', 'نفسي اكل'])) {
-    return { text: `اشرب كوباية مية الأول — ساعات العطش بيتحسّ جوع.\nلو فيه وجبة بروتين لسه مأكلتهاش، قدّمها — البروتين بيشبّع أكتر.\nلو لسه جعان بعد نص ساعة: خضار وسلطة وخيار على مزاجك، سعراتها شبه صفر ومش هتبوّظ اليوم.` };
+    return { text: `لو فيه وجبة لسه مأكلتهاش، كلها في ميعادها.\nولو لسه جعان: خضار وسلطة وخيار على مزاجك، سعراتها قليلة.` };
   }
   // 9) عايز آكل حاجة / أغش
   if (qHas(q, ['عايز اكل', 'نفسي في', 'ممكن اكل', 'اكل بره', 'اغش', 'cheat', 'عزومه', 'ممكن احط', 'ينفع اكل', 'اكل ايه', 'حاسس اني عايز'])) {
@@ -399,6 +399,8 @@ function sleepEffects() {
   return out;
 }
 function sleepTips(q) {
+  return []; // معطّل: نصايح النوم دي مش متراجعة (محمد 2026-11-11). النصيحة بتيجي في رسالة الكابتن الصبح.
+  // eslint-disable-next-line no-unreachable
   const t = [];
   if (!q) return t;
   if (q.dur && q.dur < 390) t.push('المدة قليلة – نام بدري نص ساعة النهارده. أسهل حاجة: الموبايل بره السرير.');
@@ -1945,7 +1947,7 @@ function verdict() {
   const rate = prev.avg - now.avg;
   const pct = rate / prev.avg * 100;
   const base = `متوسط الأسبوع ${fmt(now.avg, 1)} كجم – ${rate >= 0 ? 'نزلت' : 'زدت'} ${fmt(Math.abs(rate), 2)} كجم (${fmt(Math.abs(pct), 1)}%) عن الأسبوع اللي فات.`;
-  if (rate > 0.9) return { cls: 'warn', t: 'نازل أسرع من اللازم', d: `${base} ده ممكن ياكل من العضل. زوّد 30–40 جم رز في العشا.` };
+  if (rate > 0.9) return { cls: 'warn', t: 'نازل أسرع من المتفق عليه', d: `${base} ده أسرع من المعدل المتفق عليه (0.4–0.7 كجم في الأسبوع). زوّد 30–40 جم رز في العشا.` };
   if (rate >= 0.35) return { cls: 'ok', t: 'ماشي صح 👌', d: `${base} كمّل زي ما انت.${stepsLine}` };
   if (prev2 && prev2.avg - now.avg < 0.3) return { cls: 'warn', t: 'الوزن واقف أسبوعين', d: `${base} قلّل 150 سعر: نص زيت العشا (5 جم) و30 جم رز أقل.${stepsLine}` };
   return { cls: 'info', t: 'بطيء – استنى أسبوع كمان', d: `${base} أسبوع واحد مش كفاية نحكم. الأهم الالتزام بالأكل والخطوات.${stepsLine}` };
@@ -2687,8 +2689,8 @@ function renderProgress(el) {
     return `<div class="section-t">حرقك الحقيقي (آخر 3 أسابيع)</div><div class="card pad">
     <div class="tiles"><div class="tile"><small>الحرق الحقيقي</small><b class="num">${fmt(a.tdee)}</b><div class="sub">ثقة ${a.conf} · ${a.logged}/${a.days} يوم متعلّم</div></div>
     <div class="tile"><small>اتجاه الوزن</small><b class="num">${a.slopeWk <= 0 ? '−' : '+'}${fmt(Math.abs(a.slopeWk), 2)}</b><div class="sub">كجم في الأسبوع</div></div></div>
-    <p class="small" style="line-height:1.7;margin:12px 0 0">متوسط أكلك ${fmt(a.intakeAvg)} سعر. عشان تنزل 0.7% في الأسبوع المثالي ~${fmt(a.ideal)} سعر في اليوم العادي (دلوقتي ${fmt(S.settings.kcal)}).</p>
-    ${a.sleepHold ? `<div class="verdict warn mt"><h3>مش هنقلل سعرات دلوقتي 😴</h3><p>متوسط جودة نومك ${a.sleepAvg.avg}/100. التقليل والنوم وحش بيكسّر عضل بدل الدهون – نصلّح النوم الأول وبعدين نقلل.</p></div>` : ''}
+    <p class="small" style="line-height:1.7;margin:12px 0 0">متوسط أكلك ${fmt(a.intakeAvg)} سعر. عشان تنزل 0.7% في الأسبوع ~${fmt(a.ideal)} سعر في اليوم العادي (دلوقتي ${fmt(S.settings.kcal)}).</p>
+    ${a.sleepHold ? `<div class="verdict warn mt"><h3>مش هنقلل سعرات دلوقتي 😴</h3><p>متوسط جودة نومك ${a.sleepAvg.avg}/100. اتفقنا نصلّح النوم الأول وبعدين نقلل السعرات.</p></div>` : ''}
     ${a.delta ? `<button class="btn red block mt" id="adaptGo">${a.delta > 0 ? `زوّد ${a.delta} سعر (${Math.round(a.delta / 1.3)} جم رز)` : `قلّل ${-a.delta} سعر (${Math.round(-a.delta / 1.3)} جم رز)`}</button><p class="muted small" style="margin:6px 0 0">التعديل محدود بـ 150 سعر في المرة عشان ميبقاش مفاجئ.</p>` : '<p class="up small" style="margin:8px 0 0">السعرات مظبوطة – مفيش تعديل ✓</p>'}
     ${S.settings.riceAdj ? `<button class="btn ghost block mt sm" id="adaptReset">رجّع الرز للأصل (${riceAdj() > 0 ? '+' : ''}${riceAdj()} جم)</button>` : ''}</div>`; })()}
   <div class="section-t">${wAll ? 'الوزن – من أبريل' : 'الوزن – آخر 8 أسابيع'}</div><div class="card pad">${wAll ? weightChartAll() : weightChart()}<div style="display:flex;gap:16px;margin-top:8px"><button class="link small" id="wAll">${wAll ? 'آخر 8 أسابيع' : 'من أبريل'}</button><button class="link small" id="wEdit">تعديل الأوزان</button></div></div>
