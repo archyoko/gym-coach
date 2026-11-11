@@ -2338,14 +2338,14 @@ function sessSpan(s) {
   return [s.start || 0, s.end || Date.now()];
 }
 function sessMin(s) { const [a, b] = sessSpan(s); return a && b > a ? Math.round((b - a) / 6e4) : null; }
-/* مرة واحدة: يصلّح حرق وحصص اتحسبت من التايمر بدل أول/آخر سِت (علامة burn.v = 2) */
+/* مرة واحدة: يصلّح حرق وحصص اتحسبت من التايمر بدل أول/آخر سِت (علامة burn.v = 3) */
 function fixBurnV2() {
   let ch = false;
   for (const s of Object.values(S.logs || {})) {
     try {
-      if (!s || !s.end || !s.ex || (s.burn && s.burn.v === 2) || sessSets(s).length < 2) continue;
+      if (!s || !s.end || !s.ex || (s.burn && s.burn.v === 3) || (s.burn && s.burn.src === 'watch') || sessSets(s).length < 2) continue;
       const nb = sessBurn(s);
-      if (nb && (nb.src !== 'est' || !s.burn || s.burn.src === 'est')) { s.burn = Object.assign(nb, { v: 2 }); ch = true; if (s.date && S.health[s.date] && s.burn.src !== 'watch') { S.health[s.date].wkcal = nb.kcal; S.health[s.date].wmin = sessMin(s); } }
+      if (nb) { s.burn = Object.assign(nb, { v: 3 }); ch = true; if (s.date && S.health[s.date] && s.burn.src !== 'watch') { S.health[s.date].wkcal = nb.kcal; S.health[s.date].wmin = sessMin(s); } }
     } catch (e) { }
   }
   if (ch) save();
@@ -2359,21 +2359,21 @@ function sessBurn(sess) {
   // 2) نبض الساعة أثناء التمرين
   const hr = (W.hr || []).filter(x => x[0] >= a && x[0] <= b).map(x => x[1]);
   const min = (b - a) / 60;
-  if (hr.length >= 2 && min > 10) { const avg = hr.reduce((s, x) => s + x, 0) / hr.length; return { kcal: Math.round(keytel(avg, kg, age) * min), src: 'hr', avgHR: Math.round(avg), maxHR: Math.max(...hr) }; }
+  // الحديد: تقدير 3.5 MET على مدة الحصة الحقيقية (معادلة النبض بتبالغ في الحديد). النبض للعرض بس
+  if (min > 10) return { kcal: Math.round(3.5 * kg * min / 60), src: 'met', avgHR: hr.length >= 2 ? Math.round(hr.reduce((s, x) => s + x, 0) / hr.length) : null, maxHR: hr.length >= 2 ? Math.max(...hr) : null };
   // 3) تقدير: تمرين حديد ~3.5 MET متوسط مع الراحة
-  if (min > 10) return { kcal: Math.round(3.5 * kg * min / 60), src: 'est', avgHR: null, maxHR: null };
   return null;
 }
 async function afterWorkout(key) {
   const sess = S.logs[key]; if (!sess) return;
   if (WD) { S.watch = S.watch || {}; S.watch.at = 0; await watchSync(false); }
-  const burn = sessBurn(sess); if (burn) sess.burn = Object.assign(burn, { v: 2 });
+  const burn = sessBurn(sess); if (burn) sess.burn = Object.assign(burn, { v: 3 });
   const [w, dk] = key.split('-').length > 1 ? [+key.split('-')[0].replace(/\D/g, ''), key.split('-').slice(1).join('-')] : [0, ''];
   try { const rs = restStats(sess, sess.dk || dk, sess.w || w); if (rs) sess.rest = rs; } catch (e) { }
   if (burn && sess.date) { const h = (S.health[sess.date] = S.health[sess.date] || {}); if (!h.wkcal || burn.src !== 'watch') { h.wkcal = Math.max(h.wkcal || 0, burn.kcal); h.wmin = sessMin(sess); } }
   save();
   if (burn) {
-    const src = { watch: 'من الساعة', hr: 'من نبض الساعة', est: 'تقدير' }[burn.src];
+    const src = { watch: 'من الساعة', hr: 'من نبض الساعة', met: 'تقدير حديد', est: 'تقدير' }[burn.src];
     toast(`🔥 ${burn.kcal} سعر (${src})${burn.avgHR ? ` · نبض ${burn.avgHR}` : ''}`);
     wMsg(`خلّصت 💪 حرقت ${burn.kcal} سعر${sess.rest ? ` · متوسط راحتك ${clock(sess.rest.avg)}` : ''}`);
   }
