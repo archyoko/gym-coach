@@ -576,7 +576,7 @@ function suggest(ex, curKey) {
   if (allTop) return { txt: `آخر مرة: ${lastTxt}. كل المجموعات وصلت ${hi} → زوّد لـ <b>${fmt(top + inc, 2)} كجم</b>.`, w: r1(top + inc), up: true };
   if (anyLow) return { txt: `آخر مرة: ${lastTxt}. فيه مجموعة تحت ${lo} عدات → خليك على <b>${fmt(top, 2)} كجم</b> أو قلّل سنة.`, w: top };
   const pl = plateau(ex);
-  if (pl) return { txt: `آخر مرة: ${lastTxt}. <b>ثابت 3 حصص</b> من ${short(pl.since)} – جرّب نطاق ${pl.next[0]}–${pl.next[1]} عدة بوزن ${pl.next[0] > hi ? 'أخف' : 'أتقل'} عشان الجسم ياخد إشارة جديدة.`, w: top, plateau: pl };
+  if (pl) return { txt: `آخر مرة: ${lastTxt}. <b>ثابت 3 حصص</b> من ${short(pl.since)} – جرّب نطاق ${pl.next[0]}–${pl.next[1]} عدة بوزن ${pl.next[1] > hi ? 'أخف' : 'أتقل'} عشان الجسم ياخد إشارة جديدة.`, w: top, plateau: pl };
   return { txt: `آخر مرة: ${lastTxt}. نفس الوزن <b>${fmt(top, 2)} كجم</b> وحاول تزوّد عدة في كل مجموعة.`, w: top };
 }
 
