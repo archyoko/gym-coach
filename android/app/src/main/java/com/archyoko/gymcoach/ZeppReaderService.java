@@ -403,6 +403,15 @@ public class ZeppReaderService extends AccessibilityService {
             JSONObject old = data.optJSONObject(date);
             if (old != null) { java.util.Iterator<String> k = rec.keys(); while (k.hasNext()) { String key = k.next(); old.put(key, rec.get(key)); } rec = old; }
             data.put(date, rec);
+            // سجل كل الوزنات بالساعة (القراءة الجديدة ما بتمسحش اللي قبلها)
+            if (rec.has("weight")) {
+                JSONObject log = new JSONObject(p.getString("okokLog", "{}"));
+                JSONObject one = new JSONObject();
+                java.util.Iterator<String> lk = rec.keys();
+                while (lk.hasNext()) { String key = lk.next(); one.put(key, rec.get(key)); }
+                log.put(date + " " + time, one);
+                p.edit().putString("okokLog", log.toString()).apply();
+            }
             StringBuilder raw = new StringBuilder();
             for (int i = 0; i < Math.min(items.size(), 150); i++) raw.append(items.get(i).text).append(" | ");
             p.edit().putString("okok", data.toString()).putString("okokRaw", raw.toString()).putLong("okokRead", System.currentTimeMillis()).apply();

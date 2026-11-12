@@ -666,8 +666,9 @@ async function zeppPull() {
     const r = await Zepp.getData();
     zeppState = { enabled: !!r.enabled, installed: !!r.installed, lastRead: r.lastRead || 0, raw: r.raw || '', auto: r.auto !== false, okokRead: r.okokRead || 0, okokRaw: r.okokRaw || '' };
     const ok = JSON.parse(r.okok || '{}');
+    try { for (const [k, v] of Object.entries(JSON.parse(r.okokLog || '{}'))) { const [dd, tm] = k.split(' '); if (v.weight) addWeigh(dd, tm, v.weight, 'okok'); } } catch (e) { }
     for (const [d, v] of Object.entries(ok)) {
-      if (v.weight) (S.health[d] = S.health[d] || {}).oweight = v.weight;
+      if (v.weight && !(S.wlog && S.wlog[d] && S.wlog[d].length)) (S.health[d] = S.health[d] || {}).oweight = v.weight;
       const b = (S.body[d] = S.body[d] || {});
       for (const k of ['fat', 'fatKg', 'skm', 'skmKg', 'muscle', 'muscleKg', 'water', 'waterKg', 'visceral', 'bone', 'bmr', 'protein', 'lean', 'bmi', 'metaAge']) if (v[k] != null) b[k] = v[k];
       if (v.weight) b.weight = v.weight;
@@ -728,6 +729,18 @@ function okokComp(w, imp) {
     visceral: r1(visceral), bone: r1(bone), bmr, protein: r1(protein), lean: r1(lean), metaAge, imp: r1(imp), src: 'scale'
   };
 }
+/* سجل كل الوزنات بالساعة: S.wlog[تاريخ] = [{t:'HH:MM', w, src}] – مبيتمسحش منه حاجة */
+function addWeigh(d, tm, w, src) {
+  if (!w) return;
+  S.wlog = S.wlog || {};
+  const a = (S.wlog[d] = S.wlog[d] || []);
+  if (a.some(x => x.t === tm && Math.abs(x.w - w) < 0.005)) return;
+  a.push({ t: tm, w: Math.round(w * 100) / 100, src: src || 'scale' });
+  a.sort((x, y) => x.t < y.t ? -1 : 1);
+  // وزن اليوم للقرار = أول وزنة في اليوم (الصبح)
+  (S.health[d] = S.health[d] || {}).oweight = a[0].w;
+}
+function nowHM() { const n = new Date(); return String(n.getHours()).padStart(2, '0') + ':' + String(n.getMinutes()).padStart(2, '0'); }
 function latestBody() { const ds = Object.keys(S.body).sort(); for (let i = ds.length - 1; i >= 0; i--) if (S.body[ds[i]] && S.body[ds[i]].weight) return { d: ds[i], b: S.body[ds[i]] }; return null; }
 async function scaleWeigh(onDone) {
   if (!SD) { toast('ده شغال في تطبيق الأندرويد بس'); return; }
@@ -735,7 +748,7 @@ async function scaleWeigh(onDone) {
     const r = await SD.weigh({ timeout: 60000 });
     const d = today(), comp = okokComp(r.weight, r.impedance);
     S.body[d] = Object.assign({}, S.body[d] || {}, comp);
-    (S.health[d] = S.health[d] || {}).oweight = r.weight;
+    addWeigh(d, nowHM(), r.weight, 'scale');
     S.settings.scaleVariant = r.variant; save();
     onDone && onDone(comp, r);
     return comp;
@@ -1567,6 +1580,7 @@ function dailySummary(d) {
   const ses = Object.entries(S.logs).filter(([, s]) => s.date === d && Object.values(s.ex).some(a => a.length));
   return { date: d, type: dayType(d), weight: e.w, steps: e.steps, active: e.active, burnEst: e.kcal, sleepMin: e.sleep, creatine: e.creatine, water: e.water, feel: x.feel,
     meals: x.meals || {}, recipes: x.recipes || null, choice: x.choice, extras: x.extras || [], intake: intake(d), note: x.note, body: b || null,
+    weighs: (S.wlog && S.wlog[d]) || [],
     readiness: readiness(d).level, sleepQ: (q => q ? { score: q.score, zepp: q.zepp, level: q.level, deep: q.z.deep, rem: q.z.rem, light: q.z.light, awake: q.z.awake, bed: q.z.bed, wake: q.z.wake, feel: x.sleepFeel } : null)(sleepQ(d)), photos: (S.mealPhotos[d] || []).map(m => ({ meal: m.meal, file: `photos/meals/${m.key.replace(/\|/g, '_')}.jpg` })),
     sessions: ses.map(([k, s]) => ({ key: k, rpe: s.rpe, pain: s.painAreas, note: s.note, burn: s.burn, rest: restOf(s), min: s.end ? sessMin(s) : null, ex: Object.fromEntries(Object.entries(s.ex).map(([lk, a]) => [lk, a.map(z => [z.w, z.r, z.rir, z.p])])) })) };
 }
@@ -2704,6 +2718,7 @@ function renderProgress(el) {
     const list = Object.values(old); if (!list.length) return '';
     return `<div class="section-t">تمارين قديمة من The Gain (مش في البرنامج دلوقتي)</div><div class="card pad scroll-x"><table class="t"><thead><tr><th>التمرين</th><th>أحسن مجموعة</th><th>آخر مرة</th></tr></thead><tbody>${list.map(o => `<tr><td style="direction:ltr;text-align:right">${esc(o.name)}</td><td><span class="num">${fmt(o.best.w, 2)}×${o.best.r}</span></td><td>${short(o.last)}</td></tr>`).join('')}</tbody></table></div>`; })()}
   <div class="section-t">تحليل الميزان والمقاسات</div>
+  ${(() => { const wl = S.wlog || {}, ds = Object.keys(wl).sort().reverse().slice(0, 7); return ds.length ? `<div class="card pad"><div class="small muted">كل الوزنات بالساعة</div>${ds.map(d => `<p class="small" style="margin:6px 0">${short(d)}: ${wl[d].map(x => `<b>${x.w}</b> <span class="muted">${x.t}</span>`).join(' · ')}</p>`).join('')}</div>` : ''; })()}
   <div class="card pad">${bodyDates.length ? `<table class="t"><thead><tr><th>التاريخ</th><th>الوزن</th><th>دهون %</th><th>عضل هيكلي</th><th>حشوية</th><th>الوسط</th></tr></thead><tbody>${bodyDates.slice(0, 8).map(d => { const b = S.body[d]; return `<tr><td>${short(d)}</td><td>${b.weight ?? '—'}</td><td>${b.fat ?? '—'}</td><td>${b.skmKg ? b.skmKg + ' كجم' : b.skm ? b.skm + '%' : b.muscle ?? '—'}</td><td>${b.visceral ?? '—'}</td><td>${b.waist ?? '—'}</td></tr>`; }).join('')}</tbody></table>
     ${(() => { const ds = bodyDates.filter(d => S.body[d].fatKg && S.body[d].skmKg); if (ds.length < 2) return ''; const a = S.body[ds[ds.length - 1]], b = S.body[ds[0]]; const df = r1(b.fatKg - a.fatKg), dm = r1(b.skmKg - a.skmKg); return `<p class="small" style="margin:10px 0 0;line-height:1.7">من ${short(ds[ds.length - 1])}: دهون <b class="${df <= 0 ? 'up' : 'down'}">${df > 0 ? '+' : ''}${df} كجم</b> · عضل هيكلي <b class="${dm >= 0 ? 'up' : 'down'}">${dm > 0 ? '+' : ''}${dm} كجم</b></p>`; })()}
     <p class="muted small" style="margin:8px 0 0">أرقام الميزان بتتقرا لوحدها من OKOK. الوسط اكتبه انت. ميزان البصمة بيتأثر بالمية – قارن نفس الميعاد كل أسبوع.</p>` : '<p class="muted small" style="margin:0">مرة في الأسبوع: انقل أرقام OKOK (دهون، عضل، مية) ومقاس الوسط عند السرّة.</p>'}
