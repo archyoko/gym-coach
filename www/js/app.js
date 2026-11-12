@@ -90,7 +90,6 @@ function eff(d) {
     sleep: m.sleepMin ?? h.zsleep ?? h.sleepMin ?? null,
     rhr: h.rhr ?? null,
     fat: h.fat ?? null,
-    creatine: !!m.creatine,
     water: m.water || 0
   };
 }
@@ -234,8 +233,7 @@ function coachAsk(raw) {
     const st = eff(d).steps;
     return { text: st != null ? `خطواتك النهارده ${fmt(st)} من هدف ${fmt(S.settings.steps)}.\n${st >= S.settings.steps ? 'عاش 👏' : `فاضلك ${fmt(S.settings.steps - st)} خطوة.`}` : `هدفك ${fmt(S.settings.steps)} خطوة. الساعة بتسجّلهم لوحدها — افتح صفحة الساعة وزامن.` };
   }
-  // 6) المشروب / الكرياتين
-  if (qHas(q, ['كرياتين', 'creatine'])) return { text: `إنت مش بتاخد كرياتين دلوقتي، والبرنامج ماشي من غيره. لو قررت تبدأ قولّي وأسجّل التاريخ.` };
+  // 6) المشروب
   if (qHas(q, ['المشروب', 'مشروب التمرين', 'pre workout', 'بري ورك'])) return { text: `مشروب التمرين (أيام التمرين بس) بيتشرب بدل المية في الجيم: 600 مل مية + 150 مل عصير برتقال + 7 جم عسل + نص لمونة + ربع معلقة ملح. حوالي 93 سعر، من غير كافيين. قهوة الساعة 4 هي الـ pre بتاعك.` };
   // 7) نوم
   if (qHas(q, ['نمت وحش', 'نمت قليل', 'مش نايم', 'تعبان', 'نومي وحش', 'صاحي', 'قلقان'])) {
@@ -459,7 +457,7 @@ function readiness(d = today()) {
 const READY_TXT = { green: ['🟢 جاهز', 'اتمرن عادي.'], yellow: ['🟡 نص نص', 'هشيل مجموعة من كل تمرين النهارده.'], red: ['🔴 مرهق', 'خفيف: نص المجموعات وRIR 3 – أو خليه راحة وامشي 30 دقيقة.'] };
 
 /* ================= نسبة الالتزام ================= */
-const ADH_W = { wo: .35, meals: .2, steps: .2, weight: .15, cr: .1 };
+const ADH_W = { wo: .35, meals: .2, steps: .2, weight: .15 };
 function adherence(w) {
   const t = today(), start = addDays(S.settings.start, (w - 1) * 7), end = addDays(start, 6);
   if (t < start) return null;
@@ -471,8 +469,7 @@ function adherence(w) {
     wo: plan.length ? plan.filter(x => x.done).length / plan.length : null,
     meals: ratio(d => Object.values((S.days[d] || {}).meals || {}).filter(Boolean).length >= 2),
     steps: past.length ? past.reduce((a, d) => a + Math.min(1, (eff(d).steps || 0) / S.settings.steps), 0) / past.length : null,
-    weight: ratio(d => !!eff(d).w),
-    cr: ratio(d => !!(S.days[d] || {}).creatine)
+    weight: ratio(d => !!eff(d).w)
   };
   const W = ADH_W;
   let sum = 0, wsum = 0; for (const [k, v] of Object.entries(parts)) if (v != null) { sum += v * W[k]; wsum += W[k]; }
@@ -490,8 +487,7 @@ function adherenceSheet(w) {
     wo: ['تمرين', 'التمارين اللي ميعادها جه وخلصتها'],
     meals: ['أكل', 'الأيام اللي سجلت فيها وجبتين أو أكتر'],
     steps: ['خطوات', `متوسط خطواتك من هدف ${fmt(set.steps)} (الأيام اللي خلصت بس)`],
-    weight: ['وزن', 'الأيام اللي اتوزنت فيها'],
-    cr: ['كرياتين', 'الأيام اللي أخدت فيها الكرياتين']
+    weight: ['وزن', 'الأيام اللي اتوزنت فيها']
   };
   let wsum = 0; for (const k in a.parts) if (a.parts[k] != null) wsum += ADH_W[k];
   const rows = Object.keys(ADH_W).map(k => {
@@ -510,7 +506,7 @@ function adherenceSheet(w) {
     const wo = plan.find(x => x.date === d);
     return `<tr><td>${DN[parseISO(d).getDay()]} ${short(d)}${d === t ? ' <small>(النهارده)</small>' : ''}</td>
       <td>${wo ? (wo.done ? mk(true) : d < t ? mk(false) : '…') : '<small>راحة</small>'}</td>
-      <td>${mk(m >= 2)}</td><td class="num"><small>${st ? fmt(st) : '—'}</small></td><td>${mk(!!e.w)}</td><td>${mk(!!(S.days[d] || {}).creatine)}</td></tr>`;
+      <td>${mk(m >= 2)}</td><td class="num"><small>${st ? fmt(st) : '—'}</small></td><td>${mk(!!e.w)}</td></tr>`;
   }).join('');
   const worst = Object.keys(ADH_W).filter(k => a.parts[k] != null).sort((x, y) => a.parts[x] * 1 - a.parts[y] * 1)[0];
   openSheet(sheetHead('التزام الأسبوع', `الأسبوع ${w} · من ${short(start)} لـ ${short(end)}`) + `
@@ -518,7 +514,7 @@ function adherenceSheet(w) {
     ${rows}
     ${worst && a.parts[worst] < 1 ? `<p class="muted small">أكتر حاجة بتنزّل النسبة الأسبوع ده: <b>${INFO[worst][0]}</b>.</p>` : ''}
     <div class="section-t" style="margin-top:18px">يوم بيوم</div>
-    <table class="adh-t"><thead><tr><th></th><th>تمرين</th><th>أكل</th><th>خطوات</th><th>وزن</th><th>كرياتين</th></tr></thead><tbody>${grid}</tbody></table>
+    <table class="adh-t"><thead><tr><th></th><th>تمرين</th><th>أكل</th><th>خطوات</th><th>وزن</th></tr></thead><tbody>${grid}</tbody></table>
     <p class="muted small">النهارده بيتحسب بس في اللي خلصته، والخطوات بتتحسب من بكرة لما اليوم يقفل.</p>`);
 }
 const unitOf = ex => ex.unit || 'reps';
@@ -1095,7 +1091,7 @@ function notifTab(st) {
     ${c.on ? `<div class="section-t">المكالمات والكابتن</div>
       ${tg('calls', '📞 المكالمات', c.calls !== false, 'اسم المتصل يظهر والساعة تهزّ')}
       ${c.calls !== false && !st.callPerm ? `<div class="note mt"><span class="i">📞</span><span>عشان المكالمات تظهر باسم المتصل: اضغط الزرار ← وافق على كل الأذونات.</span></div><button class="btn red block sm mt" id="fwCall">اسمح بالمكالمات</button>` : ''}
-      ${tg('self', '💪 تذكيرات Lifestyle', c.self !== false, 'الراحة بين السِتات، الكرياتين، المية، النوم، رسالة الكابتن')}
+      ${tg('self', '💪 تذكيرات Lifestyle', c.self !== false, 'الراحة بين السِتات، المية، النوم، رسالة الكابتن')}
       <button class="hrow" id="fwWk" style="width:100%;border:0;background:none;text-align:inherit"><span class="v">🏋️ التمرين على الساعة<small>شاشة المزيكا في الساعة بتبقى ريموت التمرين: ▶ خلّصت السِت · ⏭ اللي بعده · ⏮ تراجع · الصوت +/− عدة</small></span><span class="d"><b class="${S.settings.wdWorkout !== false ? 'up' : 'muted'}">${S.settings.wdWorkout !== false ? '✓ شغال' : 'مقفول'}</b></span></button>
       <div class="section-t">التطبيقات</div>
       ${FWD_APPS.map(([pk, n]) => tg('app:' + pk, n, appOn(pk))).join('')}
@@ -1272,7 +1268,7 @@ async function scheduleReminders() {
       const prevMom = isMomFri(addDays(d, -1));
       const marked = mid => i === 0 && (((S.days[d] || {}).meals || {})[mid]); // اليوم: متفكّرش بوجبة معلّم عليها
       add(1, at(d, 6, 40), 'اتوزن ⚖️', prevMom ? 'بعد جمعة ماما الوزن هيعلى 1–2 كجم مية – عادي، اتوزن برضه.' : 'بعد الحمام وقبل الأكل، وافتح التفاصيل في OKOK.');
-      if (!marked('m1')) add(2, at(d, 9, 10), 'الفطار + كرياتين 💊', '5 جم مع الفطار. اضغط الزرار لما تخلّص.', 'BF');
+      if (!marked('m1')) add(2, at(d, 9, 10), 'الفطار 🍳', 'اضغط الزرار لما تخلّص.', 'BF');
       if (dow !== 5 && !marked('m2')) add(3, at(d, 15, 50), 'وجبة الشغل 🍠', 'البطاطا والزبادي والشيكولاتة – ده وقود التمرين. لو عملتلها skip سيبها من غير علامة.', 'M2');
       add(12, at(d, 13, 0), 'مية 💧', 'نص لتر دلوقتي.', 'WAT');
       add(13, at(d, 18, 0), 'مية 💧', 'نص لتر كمان.', 'WAT');
@@ -1308,7 +1304,7 @@ async function setupNotifActions() {
   if (!LN) return;
   try {
     await LN.registerActionTypes({ types: [
-      { id: 'BF', actions: [{ id: 'bf', title: 'فطرت وخدت الكرياتين ✓' }] },
+      { id: 'BF', actions: [{ id: 'bf', title: 'فطرت ✓' }] },
       { id: 'M2', actions: [{ id: 'm2', title: 'أكلتها ✓' }] },
       { id: 'M3', actions: [{ id: 'm3', title: 'أكلته ✓' }] },
       { id: 'LEC', actions: [{ id: 'box', title: 'علبة البيت' }, { id: 'smart', title: 'الطبق الذكي' }, { id: 'syrian', title: 'سوري' }] },
@@ -1321,7 +1317,7 @@ async function setupNotifActions() {
 function handleNotifAction(id, ex) {
   const d = ex.date || today(), x = day(d); x.meals = x.meals || {};
   if (id === 'tap') { if (ex.go && $('#player').hidden) { tab = ex.go; render(); } return; }
-  if (id === 'bf') { x.meals.m1 = true; x.creatine = true; }
+  if (id === 'bf') { x.meals.m1 = true; }
   else if (id === 'm2' || id === 'm3') x.meals[id] = true;
   else if (['box', 'smart', 'syrian', 'light', 'normal', 'big'].includes(id)) { x.choice = id; x.meals.m3 = true; }
   else if (id === 'w') x.water = r1((x.water || 0) + 0.5);
@@ -1578,7 +1574,7 @@ function ghSoon(ms = 60000) { try { if (!ghOn()) return; clearTimeout(ghT); ghT 
 function dailySummary(d) {
   const e = eff(d), x = S.days[d] || {}, b = S.body[d];
   const ses = Object.entries(S.logs).filter(([, s]) => s.date === d && Object.values(s.ex).some(a => a.length));
-  return { date: d, type: dayType(d), weight: e.w, steps: e.steps, active: e.active, burnEst: e.kcal, sleepMin: e.sleep, creatine: e.creatine, water: e.water, feel: x.feel,
+  return { date: d, type: dayType(d), weight: e.w, steps: e.steps, active: e.active, burnEst: e.kcal, sleepMin: e.sleep, water: e.water, feel: x.feel,
     meals: x.meals || {}, recipes: x.recipes || null, choice: x.choice, extras: x.extras || [], intake: intake(d), note: x.note, body: b || null,
     weighs: (S.wlog && S.wlog[d]) || [],
     readiness: readiness(d).level, sleepQ: (q => q ? { score: q.score, zepp: q.zepp, level: q.level, deep: q.z.deep, rem: q.z.rem, light: q.z.light, awake: q.z.awake, bed: q.z.bed, wake: q.z.wake, feel: x.sleepFeel } : null)(sleepQ(d)), photos: (S.mealPhotos[d] || []).map(m => ({ meal: m.meal, file: `photos/meals/${m.key.replace(/\|/g, '_')}.jpg` })),
@@ -1878,7 +1874,7 @@ function monthReportSheet() {
 
 function notifSheet() {
   openSheet(sheetHead('الإشعارات') + `
-    <p style="line-height:1.8">الكابتن بيفكّرك: الوزن الصبح، الكرياتين، وجبة الشغل، تمرين النهارده، تجهيز العلب، يوم المحاضرة، جمعة ماما، تقرير الجمعة، والنوم. وعداد الراحة بيرن حتى لو الموبايل مقفول.</p>
+    <p style="line-height:1.8">الكابتن بيفكّرك: الوزن الصبح، وجبة الشغل، تمرين النهارده، تجهيز العلب، يوم المحاضرة، جمعة ماما، تقرير الجمعة، والنوم. وعداد الراحة بيرن حتى لو الموبايل مقفول.</p>
     <button class="btn ${S.settings.notif ? 'ghost' : 'red'} block" id="n1">${S.settings.notif ? '✓ الإشعارات شغالة – اضغط تقفلها' : 'شغّل الإشعارات'}</button>
     <button class="btn ghost block mt sm" id="n2">🔋 اشتغل والموبايل نايم (البطارية بدون قيود)</button>
     <p class="muted small mt" id="n2s"></p>`, p => {
@@ -1978,7 +1974,7 @@ function renderHome(el) {
   const sess = tdDay ? S.logs[sessKey(w, tdDay.key)] : null;
   const ad = tp ? adherence(w) : null, streak = tp ? adherenceStreak() : 0;
   const rd = readiness();
-  const PART = { wo: 'تمرين', meals: 'أكل', steps: 'خطوات', weight: 'وزن', cr: 'كرياتين' };
+  const PART = { wo: 'تمرين', meals: 'أكل', steps: 'خطوات', weight: 'وزن' };
   const doneCount = sess ? Object.values(sess.ex).filter(x => x.length).length : 0;
   const lastW = (() => { for (let i = 0; i < 30; i++) { const x = eff(addDays(t, -i)).w; if (x) return { w: x, d: addDays(t, -i) }; } return null; })();
   const v = verdict();
@@ -2012,7 +2008,6 @@ function renderHome(el) {
     ${cell('tW', 'وزن', lastW ? fmt(lastW.w, 1) : '—', lastW && lastW.d === t)}
     ${cell('cMe', 'وجبات', `${mealsEaten}/${mealsFor(t).length}`, mealsEaten >= mealsFor(t).length)}
     ${cell('cWa', 'مية (لتر)', `${fmt(e.water, 2)}/${set.water}`, e.water >= set.water)}
-    ${cell('cCr', 'كرياتين', e.creatine ? '✓' : '5 جم', e.creatine)}
   </div>
   ${ad ? `<button class="adh mt" id="adhBtn"><div class="ring-s sm"><svg viewBox="0 0 84 84"><circle class="bg" cx="42" cy="42" r="36"/><circle class="fg" cx="42" cy="42" r="36" stroke="${ad.score >= 80 ? 'var(--ok)' : ad.score >= 60 ? 'var(--warn)' : 'var(--red)'}" stroke-dasharray="226.2" stroke-dashoffset="${226.2 * (1 - ad.score / 100)}"/></svg><b class="num">${ad.score}</b></div>
     <div><b>التزام الأسبوع</b><small>${streak ? `🔥 ${streak} أسبوع ورا بعض فوق 80%` : 'الهدف 80%'}</small></div><span class="adh-go">التفاصيل ›</span></button>` : ''}`;
@@ -2025,7 +2020,6 @@ function renderHome(el) {
   $('#tS').onclick = () => sleepSheet(t);
   const sqb = $('#sqBan'); if (sqb) sqb.onclick = () => sleepSheet(t);
   const ck = $('#ckBan'); if (ck) ck.onclick = checkinSheet;
-  $('#cCr').onclick = () => { day(t).creatine = !day(t).creatine; save(); render(); };
   $('#cWa').onclick = () => { const d = day(t); d.water = r1(((d.water || 0) + 0.25) > set.water + 1 ? 0 : (d.water || 0) + 0.25); save(); render(); };
   $('#cMe').onclick = () => { tab = 'food'; render(); };
   const ab = $('#adhBtn'); if (ab) ab.onclick = () => adherenceSheet(w);
@@ -2762,12 +2756,12 @@ function weeklyReport() {
   const now = avgWeight(t), prev = avgWeight(addDays(t, -7));
   const lines = [`# تقرير ${diffDays(t, set.start) < 0 ? 'قبل بداية البرنامج' : 'الأسبوع ' + wk} – Lifestyle`, `الفترة: ${addDays(t, -6)} → ${t}`, ''];
   lines.push('## الوزن والنشاط');
-  const daily = []; for (let i = 6; i >= 0; i--) { const d = addDays(t, -i); const e = eff(d); daily.push(`${short(d)}: ${e.w ?? '—'} كجم · ${e.steps ?? '—'} خطوة · نشاط ${e.active ?? '—'} · حرق تقديري ${e.kcal ?? '—'} · نوم ${e.sleep ? (e.sleep / 60).toFixed(1) + 'س' : '—'}${(q => q ? ` (جودة ${q.score}${q.z.deep != null ? `، عميق ${q.z.deep}د` : ''}${q.z.rem != null ? `، REM ${q.z.rem}د` : ''})` : '')(sleepQ(d))}${e.creatine ? ' · كرياتين✓' : ''}`); }
+  const daily = []; for (let i = 6; i >= 0; i--) { const d = addDays(t, -i); const e = eff(d); daily.push(`${short(d)}: ${e.w ?? '—'} كجم · ${e.steps ?? '—'} خطوة · نشاط ${e.active ?? '—'} · حرق تقديري ${e.kcal ?? '—'} · نوم ${e.sleep ? (e.sleep / 60).toFixed(1) + 'س' : '—'}${(q => q ? ` (جودة ${q.score}${q.z.deep != null ? `، عميق ${q.z.deep}د` : ''}${q.z.rem != null ? `، REM ${q.z.rem}د` : ''})` : '')(sleepQ(d))}`); }
   lines.push(`- متوسط الوزن: ${now ? fmt(now.avg, 2) : '—'} (الأسبوع اللي فات ${prev ? fmt(prev.avg, 2) : '—'})`);
   lines.push(`- متوسط الخطوات: ${fmt(avgOf('steps', t))} (الهدف ${set.steps}) · متوسط الحرق: ${fmt(avgOf('kcal', t))} · متوسط النوم: ${avgOf('sleep', t) ? (avgOf('sleep', t) / 60).toFixed(1) + ' ساعة' : '—'}`);
   lines.push(...daily.map(x => '  - ' + x));
   const bd = Object.keys(S.body).sort().pop(); if (bd) { const b = S.body[bd]; lines.push(`- آخر قياس (${bd}): وزن ${b.weight ?? '—'} · دهون ${b.fat ?? '—'}% (${b.fatKg ?? '—'} كجم) · عضل هيكلي ${b.skmKg ?? '—'} كجم (${b.skm ?? '—'}%) · مية ${b.water ?? '—'}% · حشوية ${b.visceral ?? '—'} · BMR ${b.bmr ?? '—'} · وسط ${b.waist ?? '—'} سم`); }
-  { const a = adherence(wk); if (a) lines.push('', `## الالتزام: ${a.score}% (تمرين ${a.parts.wo != null ? Math.round(a.parts.wo * 100) : '—'}% · أكل ${a.parts.meals != null ? Math.round(a.parts.meals * 100) : '—'}% · خطوات ${a.parts.steps != null ? Math.round(a.parts.steps * 100) : '—'}% · وزن ${a.parts.weight != null ? Math.round(a.parts.weight * 100) : '—'}% · كرياتين ${a.parts.cr != null ? Math.round(a.parts.cr * 100) : '—'}%)${isBusy(wk) ? ' · أسبوع مزنوق (3 أيام)' : ''} · سلسلة ${adherenceStreak()}`); }
+  { const a = adherence(wk); if (a) lines.push('', `## الالتزام: ${a.score}% (تمرين ${a.parts.wo != null ? Math.round(a.parts.wo * 100) : '—'}% · أكل ${a.parts.meals != null ? Math.round(a.parts.meals * 100) : '—'}% · خطوات ${a.parts.steps != null ? Math.round(a.parts.steps * 100) : '—'}% · وزن ${a.parts.weight != null ? Math.round(a.parts.weight * 100) : '—'}%)${isBusy(wk) ? ' · أسبوع مزنوق (3 أيام)' : ''} · سلسلة ${adherenceStreak()}`); }
   lines.push('', '## التمرين');
   { const old = Object.values(S.logs).filter(x => x.src === 'gain' && x.date >= addDays(t, -6) && x.date <= t).sort((a, b) => a.date.localeCompare(b.date));
     old.forEach(x => lines.push(`- ${x.date} (من The Gain): ${Object.entries(x.ex).map(([k, a]) => `${(a[0] && a[0].name) || k} ${a.map(z => z.w + '×' + z.r).join(' ')}`).join(' | ')}`)); }
@@ -2884,7 +2878,7 @@ function renderFood(el) {
   el.querySelectorAll('[data-rcfor]').forEach(b => b.onclick = () => recipesSheet(b.dataset.rcfor));
   el.querySelectorAll('[data-rcm]').forEach(b => b.onclick = () => { const x = (S.days[t] || {}).recipes || {}; const rr = x[b.dataset.rcm]; const r = rr && allRecipes().find(z => z.id === rr.id); if (r) recipeSheet(r, b.dataset.rcm); });
   el.querySelectorAll('[data-rcx]').forEach(b => b.onclick = () => { delete S.days[t].recipes[b.dataset.rcx]; save(); render(); });
-  el.querySelectorAll('[data-eat]').forEach(b => b.onclick = () => { const d = day(t); d.meals = d.meals || {}; d.meals[b.dataset.eat] = !d.meals[b.dataset.eat]; if (b.dataset.eat === 'drink' && d.meals.drink) d.creatine = true; save(); render(); });
+  el.querySelectorAll('[data-eat]').forEach(b => b.onclick = () => { const d = day(t); d.meals = d.meals || {}; d.meals[b.dataset.eat] = !d.meals[b.dataset.eat]; save(); render(); });
   el.querySelectorAll('[data-opt]').forEach(b => b.onclick = () => { if (future) { toast('اختار يومها بعد ما تاكل'); return; } const d = day(t); d.choice = b.dataset.opt; d.meals = d.meals || {}; d.meals.m3 = true; save(); render(); });
   el.querySelectorAll('[data-fs]').forEach(b => b.onclick = () => foodSwapSheet(b.dataset.fs));
   $('#exAdd').onclick = () => future ? toast('سجّل الأكل الزيادة يومها') : extrasSheet(t);
@@ -2996,7 +2990,6 @@ function backupSheet() {
         for (const [d, w] of Object.entries(j.weights || {})) day(d).w = +w;
         for (const [d, s] of Object.entries(j.steps || {})) day(d).steps = +s;
         for (const [d, k] of Object.entries(j.watchKcal || {})) day(d).kcal = +k;
-        for (const [d, c] of Object.entries(j.creatineLog || {})) day(d).creatine = !!c;
         for (const [d, n] of Object.entries(j.notes || {})) day(d).note = String(n);
         (j.bodyComp || []).forEach(b => { if (b.date) S.body[b.date] = { fat: b.fat, muscle: b.muscle, water: b.water }; });
       } else { toast('مش عارف الشكل ده'); return; }
