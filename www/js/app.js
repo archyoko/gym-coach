@@ -848,7 +848,7 @@ function watchMerge(r) {
   const H = d => (S.health[d] = S.health[d] || {});
   if (r.today) {
     const h = H(today()), t = r.today;
-    if (t.steps > 0 && t.steps < 1e5) h.zsteps = t.steps; // سجل الأيام تحت بيكتب فوقه لو موجود
+    if (t.steps > 0 && t.steps < 1e5 && !(h.zsteps > t.steps)) h.zsteps = t.steps; // عداد اليوم مبيقلش: لو الساعة رجعت رقم أقل (ريستارت/مسح) منكتبش فوق الأعلى
     if (t.kcal > 0 && t.kcal < 5000) h.zactive = t.kcal;
     if (t.hr) h.zhr = t.hr;
     h.wd = 1; W.today = Object.assign({ at: Date.now() }, t);
