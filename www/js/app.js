@@ -83,7 +83,7 @@ function eff(d) {
   const active = m.active ?? h.zactive ?? h.active ?? null;
   return {
     w: m.w ?? h.oweight ?? h.weight ?? null,
-    steps: m.steps ?? h.zsteps ?? h.steps ?? null,
+    steps: m.steps ?? (d === today() && h.steps > (h.zsteps || 0) ? h.steps : (h.zsteps ?? h.steps ?? null)), // النهارده: لو جوجل هيلث أعلى من الساعة (الساعة اتصفّرت) ناخد جوجل هيلث
     active,
     // حرق تقديري = راحة (الميزان) + نشاط الساعة + التمرين لو الساعة مش حاسباه في الحلقة + هضم الأكل ~10%
     kcal: m.kcal ?? (active != null ? Math.round(bmr(d) + active + (h.wkcal && h.wkcal > active ? h.wkcal : 0) + 0.1 * DIET.kcal) : h.kcal) ?? null,
