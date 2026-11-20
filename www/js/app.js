@@ -438,7 +438,7 @@ function readiness(d = today()) {
   const e = eff(d); let score = 0; const why = [];
   const sl = e.sleep, q = sleepQ(d);
   let sp = 0;
-  if (sl != null) { if (sl < 330) sp = -2; else if (sl < 390) sp = -1; }
+  if (sl != null) { if (sl < 330) sp = -2; else if (sl < 360) sp = -1; }
   if (q) { const qp = q.score < 50 ? -2 : q.score < 65 ? -1 : 0; if (qp < sp) sp = qp; }
   if (sp) { score += sp; why.push(q ? `جودة النوم ${q.score}${sl ? ` (${r1(sl / 60)} ساعة)` : ''}` : `نوم ${r1(sl / 60)} ساعة`); }
   let pain = false;
@@ -448,8 +448,6 @@ function readiness(d = today()) {
     for (const a of Object.values(s.ex)) if (a.some(x => x.p != null && x.p > 3)) pain = true;
   }
   if (pain) { score -= 1; why.push('وجع فوق 3 في آخر 5 أيام'); }
-  let run = 0; for (let i = 1; i <= 3; i++) { const dd = addDays(d, -i); if (Object.values(S.logs).some(s => s.date === dd && !s.legacy && Object.values(s.ex).some(a => a.length))) run++; else break; }
-  if (run >= 2) { score -= 1; why.push(`${run} أيام تمرين ورا بعض`); }
   const feel = (S.days[d] || {}).feel;
   if (feel === 'tired') { score -= 2; why.push('حاسس بإرهاق'); } else if (feel === 'meh') { score -= 1; why.push('حاسس نص نص'); }
   return { level: score <= -2 ? 'red' : score === -1 ? 'yellow' : 'green', why, feel };
