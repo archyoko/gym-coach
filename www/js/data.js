@@ -7,13 +7,13 @@ const PROGRAM = {
   days: [
     { key: 'upperA', dow: 6, label: 'السبت', title: 'UPPER A', sub: 'صدر علوي · لاتس · كتف جانبي' },
     { key: 'lowerA', dow: 1, label: 'الاتنين', title: 'LOWER A', sub: 'فخذ أمامي وخلفي · بدون انحناء عميق' },
-    { key: 'upperB', dow: 3, label: 'الأربع', title: 'UPPER B', sub: 'عرض الضهر · صدر · تأهيل الباي' },
+    { key: 'upperB', dow: 3, label: 'الأربع', title: 'UPPER B', sub: 'عرض الضهر · صدر · الباي' },
     { key: 'lowerB', dow: 4, label: 'الخميس', title: 'LOWER B', sub: 'رجل خفيف + كتف جانبي', optional: true }
   ],
   ex: {
     upperA: [
       { id: 'er', ss: 'w', kind: 'warm', name: 'دوران خارجي كيبل', en: 'Cable External Rotation', img: 'External_Rotation_with_Cable', sets: 2, reps: [12, 15], rir: '3', rest: 45,
-        note: 'إجباري قبل أي ضغط. بيقوّي العضلات الدوارة اللي بتثبّت رأس عظمة الكتف وبيقلل الانحشار.',
+        note: 'إجباري قبل أي ضغط. بيقوّي العضلات الدوارة اللي بتثبّت رأس عظمة الكتف وبيحمي الكتف.',
         cues: ['الكوع لازق في جنبك طول الحركة', 'وزن خفيف وحركة بطيئة', 'متلفّش الجسم مع الدراع'],
         alts: [{ name: 'دوران خارجي باستك', en: 'External Rotation with Band', img: 'External_Rotation_with_Band' }] },
       { id: 'ir', ss: 'w', kind: 'warm', name: 'دوران داخلي كيبل', en: 'Cable Internal Rotation', img: 'Cable_Internal_Rotation', sets: 2, reps: [12, 15], rir: '3', rest: 45,
@@ -21,7 +21,7 @@ const PROGRAM = {
         cues: ['الكوع ثابت على 90°', 'متشدّش بالجسم'],
         alts: [{ name: 'دوران داخلي باستك', en: 'Internal Rotation with Band', img: 'Internal_Rotation_with_Band' }] },
       { id: 'incDb', kind: 'main', name: 'ضغط دمبل مائل قبضة محايدة', en: 'Neutral-Grip Incline DB Press', img: 'Hammer_Grip_Incline_DB_Bench_Press', sets: 3, reps: [8, 12], rir: '2', rest: 120, inc: 2, noFail: true,
-        note: 'التمرين الأساسي للصدر العلوي. القبضة المحايدة (الكفين في وش بعض) بتقلل الضغط على الكتف المنحشر. زاوية الكرسي 30° مش أكتر.',
+        note: 'التمرين الأساسي للصدر العلوي. القبضة المحايدة (الكفين في وش بعض) بتريّح الكتف. زاوية الكرسي 30° مش أكتر.',
         cues: ['الدمبل ينزل لمستوى أعلى الصدر مش الرقبة', 'الكوع حوالي 45° من الجسم مش مفتوح على الآخر', 'لا فشل – سيب عدتين'],
         alts: [{ name: 'جهاز صدر مائل', en: 'Incline Machine Press', img: 'Leverage_Incline_Chest_Press' }, { name: 'ضغط كيبل مائل', en: 'Incline Cable Press', img: 'Incline_Cable_Chest_Press' }] },
       { id: 'lowFly', kind: 'main', name: 'فلاي كيبل من تحت لفوق', en: 'Low-to-High Cable Fly', img: 'Low_Cable_Crossover', sets: 3, reps: [12, 15], rir: '0–1', rest: 90, inc: 2.5, fail: true,
@@ -33,7 +33,7 @@ const PROGRAM = {
         cues: ['الصدر مرفوع واسحب للصدر', 'فكّر إنك بتنزّل الكوع لجيبك', 'متترجعش لورا بجسمك'],
         alts: [{ name: 'سحب عالي بإيد واحدة', en: 'One-Arm Lat Pulldown', img: 'One_Arm_Lat_Pulldown' }, { name: 'سحب عالي قبضة متوسطة', en: 'Lat Pulldown', img: 'Full_Range-Of-Motion_Lat_Pulldown' }] },
       { id: 'cableLat', kind: 'main', name: 'رفرفة جانبي كيبل', en: 'Cable Lateral Raise', img: 'Cable_Seated_Lateral_Raise', sets: 4, reps: [12, 20], rir: '0–1', rest: 90, inc: 1.25, fail: true,
-        note: 'ده سر عرض الكتف. ارفع في مستوى اللوح (الدراع قدام الجسم سنة بسيطة) ولحد مستوى الكتف بس – ده الأمان مع الانحشار.',
+        note: 'ده سر عرض الكتف. ارفع في مستوى اللوح (الدراع قدام الجسم سنة بسيطة) ولحد مستوى الكتف بس – ده بيحافظ على الكتف.',
         cues: ['متطلعش أعلى من الكتف', 'من غير مرجحة', 'الكوع يقود الحركة مش الكف'],
         alts: [{ name: 'رفرفة جانبي دمبل', en: 'DB Lateral Raise', img: 'Side_Lateral_Raise' }, { name: 'رفرفة جانبي مائل', en: 'Incline Lateral Raise', img: 'One-Arm_Incline_Lateral_Raise' }] },
       { id: 'pushV', kind: 'main', name: 'تراي بوش داون V', en: 'V-Bar Triceps Pushdown', img: 'Triceps_Pushdown_-_V-Bar_Attachment', sets: 3, reps: [10, 15], rir: '1', rest: 90, inc: 2.5, fail: true,
@@ -53,10 +53,10 @@ const PROGRAM = {
         note: 'تنشيط الألوية الجانبية – بتثبّت الركبة ومتخليهاش تنهار لجوه.',
         cues: ['حركة بطيئة', 'الضهر ملزوق في الكرسي'], alts: [{ name: 'مشية الباستك', en: 'Monster Walk', img: 'Monster_Walk' }] },
       { id: 'wallSit', kind: 'main', name: 'وول سيت (ثبات)', en: 'Wall Sit', img: null, sets: 3, reps: [30, 45], unit: 'sec', rir: '2', rest: 60,
-        note: 'تمرين ثابت للفخذ الأمامي، ومريح جداً للركبة بعد تهذيب الغضروف. الزاوية أقل من 90° (مش لتحت أوي).',
+        note: 'تمرين ثابت للفخذ الأمامي، ومريح جداً للركبة. الزاوية أقل من 90° (مش لتحت أوي).',
         cues: ['الضهر لازق في الحيطة', 'الركبة فوق مشط الرجل مش قدامه', 'وقّف لو الوجع فوق 3/10'], alts: [] },
       { id: 'legPress', kind: 'main', name: 'ليج برس لحد 90°', en: 'Leg Press (to 90°)', img: 'Leg_Press', sets: 3, reps: [10, 15], rir: '2', rest: 120, inc: 5, noFail: true,
-        note: 'الرجلين عالي على اللوح بعرض الكتف. انزل لحد ما الركبة تبقى 90° بس – الضغط على الغضروف بيزيد مع النزول الأعمق.',
+        note: 'الرجلين عالي على اللوح بعرض الكتف. انزل لحد ما الركبة تبقى 90° بس – الضغط على الركبة بيزيد مع النزول الأعمق.',
         cues: ['متقفلش الركبة فوق', 'الوسط ميرفعش من الكرسي', 'لا فشل أبداً'],
         alts: [{ name: 'هاك سكوات جزئي', en: 'Partial Hack Squat', img: 'Hack_Squat' }, { name: 'ليج برس سميث', en: 'Smith Leg Press', img: 'Smith_Machine_Leg_Press' }] },
       { id: 'lyingCurl', kind: 'main', name: 'ليج كيرل نايم', en: 'Lying Leg Curl', img: 'Lying_Leg_Curls', sets: 3, reps: [10, 15], rir: '1', rest: 90, inc: 2.5,
@@ -64,7 +64,7 @@ const PROGRAM = {
         cues: ['الوسط لازق في الجهاز', 'نزول بطيء 2–3 ثواني'],
         alts: [{ name: 'ليج كيرل جالس', en: 'Seated Leg Curl', img: 'Seated_Leg_Curl' }, { name: 'ليج كيرل واقف', en: 'Standing Leg Curl', img: 'Standing_Leg_Curl' }] },
       { id: 'rdl', kind: 'main', name: 'رفعة رومانية', en: 'Romanian Deadlift', img: 'Romanian_Deadlift', sets: 3, reps: [8, 12], rir: '2', rest: 120, inc: 2, noFail: true,
-        note: 'الركبة شبه مفرودة فآمنة للغضروف. بتقوّي خلفية الفخذ والألوية وأسفل الضهر، وبتساعد في وقفة الحوض.',
+        note: 'الركبة شبه مفرودة فآمنة للركبة. بتقوّي خلفية الفخذ والألوية وأسفل الضهر، وبتساعد في وقفة الحوض.',
         cues: ['الضهر مستقيم طول الحركة', 'الوزن ينزل لحد نص الساق', 'ادفع الحوض لورا مش لتحت'],
         alts: [{ name: 'رفعة دمبل رجل مفرودة', en: 'Stiff-Leg DB Deadlift', img: 'Stiff-Legged_Dumbbell_Deadlift' }, { name: 'هيب ثرست', en: 'Hip Thrust', img: 'Barbell_Hip_Thrust' }] },
       { id: 'legExt', kind: 'main', name: 'ليج اكستنشن', en: 'Leg Extension', img: 'Leg_Extensions', sets: 2, reps: [12, 15], rir: '1–2', rest: 90, inc: 2.5,
@@ -80,7 +80,7 @@ const PROGRAM = {
       { id: 'catCow', ss: 'w', kind: 'warm', name: 'كات كاو', en: 'Cat-Cow', img: 'Cat_Stretch', sets: 1, reps: [10, 12], rir: '—', rest: 30,
         note: 'إحماء للعمود الفقري ولوح الكتف.', cues: ['حركة بطيئة مع النفس', 'من الضهر كله مش من الحوض بس'], alts: [] },
       { id: 'facePullW', ss: 'w', kind: 'warm', name: 'فيس بول خفيف', en: 'Face Pull (warm-up)', img: 'Face_Pull', sets: 2, reps: [15, 15], rir: '3', rest: 45, inc: 2.5,
-        note: 'تأهيل مباشر للانحشار: خلفية الكتف + الدوران الخارجي.',
+        note: 'وقاية للكتف: خلفية الكتف + الدوران الخارجي.',
         cues: ['اسحب لمستوى العين', 'افتح الإيدين لبرة في الآخر', 'وزن خفيف'], alts: [{ name: 'باند بول أبارت', en: 'Band Pull Apart', img: 'Band_Pull_Apart' }] },
       { id: 'pdMed', kind: 'main', name: 'سحب عالي قبضة متوسطة', en: 'Lat Pulldown', img: 'Full_Range-Of-Motion_Lat_Pulldown', sets: 3, reps: [8, 12], rir: '1–2', rest: 120, inc: 2.5,
         note: 'بعرض الكتف زي ما بتعمل. التكرار التاني للاتس في الأسبوع.',
@@ -102,7 +102,7 @@ const PROGRAM = {
         note: 'الجلوس بيمنع المرجحة. لحد مستوى الكتف بس.',
         cues: ['متطلعش أعلى من الكتف', 'الكوع شبه مثني', 'نزول بطيء'],
         alts: [{ name: 'رفرفة جانبي كيبل', en: 'Cable Lateral Raise', img: 'Cable_Seated_Lateral_Raise' }, { name: 'رفرفة جانبي مائل', en: 'Incline Lateral Raise', img: 'One-Arm_Incline_Lateral_Raise' }] },
-      { id: 'ropeHammer', kind: 'rehab', name: 'هامر كيبل بالحبل (تأهيل)', en: 'Rope Hammer Curl', img: 'Cable_Hammer_Curls_-_Rope_Attachment', sets: 2, reps: [12, 15], rir: '3', rest: 90, inc: 1.25, noFail: true, pain: true,
+      { id: 'ropeHammer', kind: 'rehab', name: 'هامر كيبل بالحبل', en: 'Rope Hammer Curl', img: 'Cable_Hammer_Curls_-_Rope_Attachment', sets: 2, reps: [12, 15], rir: '3', rest: 90, inc: 1.25, noFail: true, pain: true,
         note: 'علاج وتر الباي عند الكوع: حمل خفيف ومتدرّج. الوجع وقت التمرين وبعده لازم يفضل 3/10 أو أقل، ومن غير ما يزيد الصبح. البريتشر والكيرل المائل هيرجعوا لما الوجع مع الشيل يختفي 2–3 أسابيع.',
         cues: ['طلوع ثانيتين ونزول 3 ثواني', 'الكوع ثابت', 'لو الوجع فوق 3/10 وقّف واعمل ثبات 30 ث بس'],
         alts: [{ name: 'هامر دمبل', en: 'DB Hammer Curl', img: 'Hammer_Curls' }, { name: 'هامر عرضي', en: 'Cross-Body Hammer Curl', img: 'Cross_Body_Hammer_Curl' }] },
@@ -134,7 +134,7 @@ const PROGRAM = {
         note: 'التكرار التالت للكتف الجانبي في الأسبوع (11 مجموعة إجمالي).', cues: ['لحد مستوى الكتف', 'من غير مرجحة'],
         alts: [{ name: 'رفرفة جانبي دمبل', en: 'DB Lateral Raise', img: 'Side_Lateral_Raise' }] },
       { id: 'facePull', kind: 'main', name: 'فيس بول', en: 'Face Pull', img: 'Face_Pull', sets: 2, reps: [15, 20], rir: '1', rest: 60, inc: 2.5,
-        note: 'بيعدّل ميلة الكتف لقدام وبيحمي من الانحشار.', cues: ['لمستوى العين', 'افتح لبرة في الآخر'],
+        note: 'بيعدّل ميلة الكتف لقدام وبيحمي الكتف.', cues: ['لمستوى العين', 'افتح لبرة في الآخر'],
         alts: [{ name: 'رفرفة خلفي كيبل', en: 'Cable Rear Delt Fly', img: 'Cable_Rear_Delt_Fly' }] }
     ]
   }
@@ -298,7 +298,7 @@ const WARMUP = {
   upper: { time: '8–10 دقايق', why: 'تسخين الكتف والكوع قبل الحمل. الكتف اتعالج، والكوع لسه بنحميه.', steps: [
     { t: 'عجلة أو مشاية سريعة', d: '4 دقايق', how: 'لحد ما تعرق خفيف ونَفَسك يعلى شوية. ده بيدفّي العضل والأوتار.' },
     { t: 'دوائر الدراع', d: '10 قدام + 10 ورا', how: 'ابدأ دوائر صغيرة وكبّرها بالتدريج. متطلّعش الدراع فوق راسك لو الكتف بيوجع.' },
-    { t: 'فتح الباستك (Band Pull-Apart)', d: '15 عدة', how: 'باستك خفيف أو كيبل خفيف جداً قدام صدرك، افرد إيديك لبرّه وضمّ لوحي الكتف لورا. بيشغّل خلف الكتف اللي بيحميه من الانحشار.' },
+    { t: 'فتح الباستك (Band Pull-Apart)', d: '15 عدة', how: 'باستك خفيف أو كيبل خفيف جداً قدام صدرك، افرد إيديك لبرّه وضمّ لوحي الكتف لورا. بيشغّل خلف الكتف اللي بيحميه.' },
     { t: 'ضغط لوح الكتف على الحيطة', d: '10 عدات', how: 'إيديك على الحيطة والدراع مفرود. قرّب لوحي الكتف لبعض وبعدين بعّدهم – من غير ما تثني الكوع.' },
     { t: 'تسخين الكوع والرسغ', d: '15 + 15', how: 'لف الرسغ في الاتجاهين، وبعدين هامر بدمبل 2–4 كجم 15 عدة بطيء. ده بيجهّز وتر الباي قبل أي سحب.' },
     { t: 'الدوران الخارجي والداخلي', d: 'أول تمرينين في البرنامج', how: 'اعملهم زي ما هما مكتوبين في البرنامج – هما آخر جزء من التسخين.' }
@@ -307,7 +307,7 @@ const WARMUP = {
     { t: 'العجلة', d: '8–10 دقايق', how: 'أول تمرين في البرنامج. مقاومة خفيفة لمتوسطة، ورجلك متفرّدش على الآخر تحت.' },
     { t: 'مرجحة الرجل', d: '10 قدام وورا + 10 جنب لكل رجل', how: 'امسك في حاجة ومرجح الرجل بالراحة، وكبّر المدى بالتدريج.' },
     { t: 'كوبري الحوض (Glute Bridge)', d: '12 عدة', how: 'على ضهرك وركبك مثنية، ارفع الحوض واعصر المقعدة ثانيتين فوق. المقعدة القوية بتشيل الحمل عن الركبة.' },
-    { t: 'شد الفخذ والرجل مفرودة', d: '10 × 5 ثواني لكل رجل', how: 'اقعد ورجلك مفرودة، اضغط ورا الركبة في الأرض وشدّ عضلة الفخذ الأمامية. بيصحّي العضلة اللي بتحمي الغضروف.' },
+    { t: 'شد الفخذ والرجل مفرودة', d: '10 × 5 ثواني لكل رجل', how: 'اقعد ورجلك مفرودة، اضغط ورا الركبة في الأرض وشدّ عضلة الفخذ الأمامية. بيصحّي العضلة اللي بتحمي الركبة.' },
     { t: 'سكوات على كرسي – مدى مريح', d: '10 عدات', how: 'انزل لحد ما تلمس الكرسي بس، ومتعدّيش مدى الوجع. لو فيه طقطقة معاها وجع وقّف.' },
     { t: 'الكاحل قدام الحيطة', d: '10 لكل رجل', how: 'صوابع رجلك قريبة من الحيطة، دفّع الركبة لقدام فوق الصوابع من غير ما الكعب يترفع.' }
   ] },
