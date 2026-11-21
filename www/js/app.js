@@ -130,7 +130,7 @@ function mealsFor(d) {
     }
     return base;
   });
-  if (train) { const di = DRINK.items.map(x => Object.assign({}, x)); out.splice(2, 0, { id: 'drink', title: DRINK.title, time: DRINK.time, where: DRINK.where, note: DRINK.note, items: di, kcal: di.reduce((a, x) => a + x.kcal, 0), p: di.reduce((a, x) => a + x.p, 0), drink: true }); }
+  if (false && train) { const di = DRINK.items.map(x => Object.assign({}, x)); out.splice(2, 0, { id: 'drink', title: DRINK.title, time: DRINK.time, where: DRINK.where, note: DRINK.note, items: di, kcal: di.reduce((a, x) => a + x.kcal, 0), p: di.reduce((a, x) => a + x.p, 0), drink: true }); }
   return out;
 }
 const kcalTarget = d => mealsFor(d).reduce((a, m) => a + m.kcal, 0);
