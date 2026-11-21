@@ -1520,7 +1520,7 @@ const checkinThisWeek = () => { for (let i = 0; i < 7; i++) { const d = addDays(
 function checkinSheet() {
   const d = today(), c = Object.assign({}, S.checkins[d] || {});
   openSheet(sheetHead('تشيك إن الأسبوع', '30 ثانية – الكابتن بيقرا ده') + CHECK_Q.map(([k, t, opts]) => `<div class="field"><span>${t}</span><div class="grid3" style="grid-template-columns:repeat(5,1fr);gap:6px">${opts.map((o, i) => `<button class="chip" data-ck="${k}" data-v="${i + 1}" style="justify-content:center;white-space:normal;text-align:center;padding:8px 4px;${c[k] === i + 1 ? 'background:var(--red);color:#fff' : ''}">${o}</button>`).join('')}</div></div>`).join('')
-    + `<label class="field"><span>مقاس الوسط عند السرّة (سم) – الصبح قبل الأكل</span><input id="ckW" class="inp num" inputmode="decimal" value="${c.waist ?? ''}"></label>
+    + `<label class="field"><span>مقاس الوسط تحت السرّة (سم) – الصبح قبل الأكل</span><input id="ckW" class="inp num" inputmode="decimal" value="${c.waist ?? ''}"></label>
     <label class="field"><span>أي حاجة تحب تقولها للكابتن</span><textarea id="ckN" class="inp">${esc(c.note || '')}</textarea></label>
     <button class="btn red block mt" id="ckSave">حفظ</button>`, p => {
     p.querySelectorAll('[data-ck]').forEach(b => b.onclick = () => { c[b.dataset.ck] = +b.dataset.v; p.querySelectorAll(`[data-ck="${b.dataset.ck}"]`).forEach(x => { const on = x === b; x.style.background = on ? 'var(--red)' : ''; x.style.color = on ? '#fff' : ''; }); });
@@ -2713,7 +2713,7 @@ function renderProgress(el) {
   ${(() => { const wl = S.wlog || {}, ds = Object.keys(wl).sort().reverse().slice(0, 7); return ds.length ? `<div class="card pad"><div class="small muted">كل الوزنات بالساعة</div>${ds.map(d => `<p class="small" style="margin:6px 0">${short(d)}: ${wl[d].map(x => `<b>${x.w}</b> <span class="muted">${x.t}</span>`).join(' · ')}</p>`).join('')}</div>` : ''; })()}
   <div class="card pad">${bodyDates.length ? `<table class="t"><thead><tr><th>التاريخ</th><th>الوزن</th><th>دهون %</th><th>عضل هيكلي</th><th>حشوية</th><th>الوسط</th></tr></thead><tbody>${bodyDates.slice(0, 8).map(d => { const b = S.body[d]; return `<tr><td>${short(d)}</td><td>${b.weight ?? '—'}</td><td>${b.fat ?? '—'}</td><td>${b.skmKg ? b.skmKg + ' كجم' : b.skm ? b.skm + '%' : b.muscle ?? '—'}</td><td>${b.visceral ?? '—'}</td><td>${b.waist ?? '—'}</td></tr>`; }).join('')}</tbody></table>
     ${(() => { const ds = bodyDates.filter(d => S.body[d].fatKg && S.body[d].skmKg); if (ds.length < 2) return ''; const a = S.body[ds[ds.length - 1]], b = S.body[ds[0]]; const df = r1(b.fatKg - a.fatKg), dm = r1(b.skmKg - a.skmKg); return `<p class="small" style="margin:10px 0 0;line-height:1.7">من ${short(ds[ds.length - 1])}: دهون <b class="${df <= 0 ? 'up' : 'down'}">${df > 0 ? '+' : ''}${df} كجم</b> · عضل هيكلي <b class="${dm >= 0 ? 'up' : 'down'}">${dm > 0 ? '+' : ''}${dm} كجم</b></p>`; })()}
-    <p class="muted small" style="margin:8px 0 0">أرقام الميزان بتتقرا لوحدها من OKOK. الوسط اكتبه انت. ميزان البصمة بيتأثر بالمية – قارن نفس الميعاد كل أسبوع.</p>` : '<p class="muted small" style="margin:0">مرة في الأسبوع: انقل أرقام OKOK (دهون، عضل، مية) ومقاس الوسط عند السرّة.</p>'}
+    <p class="muted small" style="margin:8px 0 0">أرقام الميزان بتتقرا لوحدها من OKOK. الوسط اكتبه انت. ميزان البصمة بيتأثر بالمية – قارن نفس الميعاد كل أسبوع.</p>` : '<p class="muted small" style="margin:0">مرة في الأسبوع: انقل أرقام OKOK (دهون، عضل، مية) ومقاس الوسط تحت السرّة.</p>'}
     <button class="btn ghost block mt sm" id="addBody">${ICON.plus.replace('<svg', '<svg style="stroke:var(--ink)"')} أضف قياس</button></div>
   <div class="section-t">صور التقدّم</div>
   <div class="card pad">${(() => { const ds = photoDates(); if (!ds.length) return `<p style="margin:0;line-height:1.7">صوّر نقطة البداية: <b>قدام، جنب، ضهر</b>. وكل 4 أسابيع الكابتن هيفكّرك، وتقارن جنب بعض.</p>`;
@@ -2738,7 +2738,7 @@ function bodySheet() {
   const d = today(), b = S.body[d] || {};
   openSheet(sheetHead('قياس جديد', 'من ميزان OKOK + شريط القياس') + `
     <div class="grid2"><label class="field"><span>دهون %</span><input id="bF" class="inp num" inputmode="decimal" value="${b.fat ?? ''}"></label><label class="field"><span>عضل %</span><input id="bM" class="inp num" inputmode="decimal" value="${b.muscle ?? ''}"></label>
-    <label class="field"><span>مية %</span><input id="bW" class="inp num" inputmode="decimal" value="${b.water ?? ''}"></label><label class="field"><span>الوسط عند السرّة (سم)</span><input id="bC" class="inp num" inputmode="decimal" value="${b.waist ?? ''}"></label></div>
+    <label class="field"><span>مية %</span><input id="bW" class="inp num" inputmode="decimal" value="${b.water ?? ''}"></label><label class="field"><span>الوسط تحت السرّة (سم)</span><input id="bC" class="inp num" inputmode="decimal" value="${b.waist ?? ''}"></label></div>
     <p class="muted small">قيس الوسط الصبح قبل الأكل، والشريط مفرود ومش ضاغط.</p>
     <button class="btn red block mt" id="bSave">حفظ</button>`, p => {
     $('#bSave', p).onclick = () => {
