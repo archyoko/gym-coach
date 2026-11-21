@@ -1730,7 +1730,7 @@ function rampFor(w, dk) {
   return { ex, sets: WARMUP.ramp.map(([f, r]) => ({ w: top ? rnd(top * f) : null, r, f })) };
 }
 function warmSheet(w, dk, onDone) {
-  const wk = WARMUP[warmKind(dk)], rp = rampFor(w, dk), done = new Set();
+  const wk = WARMUP[warmKind(dk)], rp = rampFor(w, dk), done = new Set(), t0 = Date.now();
   openSheet(sheetHead('🔥 التسخين قبل التمرين', `${dayByKey(dk).title} · ${wk.time}`) + `
     <p class="muted small" style="line-height:1.7">${esc(wk.why)}</p>
     ${wk.steps.map((st, i) => `<button class="item" style="width:100%;text-align:start" data-wu="${i}"><span class="food-ic">${i + 1}</span><div><b>${esc(st.t)} – <bdi class="num">${esc(st.d)}</bdi></b><small style="line-height:1.7">${esc(st.how)}</small></div></button>`).join('')}
@@ -1741,7 +1741,7 @@ function warmSheet(w, dk, onDone) {
     <div class="verdict warn mt"><p style="margin:0">${esc(WARMUP.rule)}</p></div>
     ${onDone ? `<button class="btn red block mt" id="wuGo">خلصت التسخين – ابدأ</button><button class="link small" id="wuSkip" style="display:block;margin:12px auto 0">سخّنت لوحدي – ابدأ على طول</button>` : '<button class="btn ghost block mt" data-close>تمام</button>'}`, p => {
     p.querySelectorAll('[data-wu]').forEach(b => b.onclick = () => { const i = b.dataset.wu; done.has(i) ? done.delete(i) : done.add(i); const ic = $('.food-ic', b); ic.textContent = done.has(i) ? '✓' : +i + 1; ic.style.background = done.has(i) ? 'var(--ok)' : ''; ic.style.color = done.has(i) ? '#fff' : ''; });
-    const go = $('#wuGo', p); if (go) go.onclick = () => { ensureSess(w, dk).warm = done.size || 1; save(); closeSheet(); onDone(); };
+    const go = $('#wuGo', p); if (go) go.onclick = () => { const ss = ensureSess(w, dk); ss.warm = done.size || 1; if (!ss.warmStart) ss.warmStart = t0; save(); closeSheet(); onDone(); };
     const sk = $('#wuSkip', p); if (sk) sk.onclick = () => { ensureSess(w, dk).warm = 'self'; save(); closeSheet(); onDone(); };
   });
 }
@@ -2345,7 +2345,12 @@ function restOf(s) { try { if (s && s.dk && s.w) { const r = restStats(s, s.dk, 
 /* مدة الحصة الحقيقية = من أول سِت لآخر سِت (±دقيقة). التايمر ممكن يبدأ بدري أو يتفتح بالغلط */
 function sessSpan(s) {
   const ts = sessSets(s).map(x => x.t);
-  if (ts.length >= 2) return [Math.min(...ts) - 60000, Math.max(...ts) + 60000];
+  if (ts.length >= 2) {
+    let a = Math.min(...ts) - 60000;
+    // وقت التسخين (من فتح شاشة التسخين) بيتحسب لحد 20 دقيقة قبل أول سِت
+    if (s.warmStart && s.warmStart < a) a = Math.max(s.warmStart, a - 20 * 60000);
+    return [a, Math.max(...ts) + 60000];
+  }
   return [s.start || 0, s.end || Date.now()];
 }
 function sessMin(s) { const [a, b] = sessSpan(s); return a && b > a ? Math.round((b - a) / 6e4) : null; }
