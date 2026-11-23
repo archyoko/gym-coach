@@ -568,8 +568,10 @@ function suggest(ex, curKey) {
   const allTop = work.length >= Math.min(ex.sets, last.sets.length) && work.every(s => +s.r >= hi);
   const anyLow = work.some(s => +s.r < lo);
   const tooHard = ex.noFail && last.sets.some(s => +s.rir === 0);
-  const inc = ex.inc || 2.5;
+  const inc = ex.inc ?? 2.5;
   const lastTxt = last.sets.map(s => `${fmt(s.w, 2)}×${s.r}`).join('، ');
+  /* تمرين بوزن الجسم (inc = 0): مفيش وزن يتزوّد، بنعرض آخر مرة بس */
+  if (inc === 0) return { txt: `آخر مرة: ${last.sets.map(s => s.r).join('، ')} عدة.${allTop ? ` كل المجموعات وصلت ${hi}.` : ''}`, w: top };
   if (tooHard) return { txt: `آخر مرة (${lastTxt}) وصلت للفشل في تمرين فيه إصابة. خليك على <b>${fmt(top, 2)} كجم</b> وسيب عدتين.`, w: top, warn: true };
   if (allTop && warmish) return { txt: `آخر مرة: ${lastTxt}. ده ${ex.kind === 'rehab' ? 'تأهيل' : 'إحماء'} – زوّد بس لو مفيش أي وجع، وبأصغر وزن (${fmt(top + inc, 2)} كجم).`, w: top };
   if (allTop) return { txt: `آخر مرة: ${lastTxt}. كل المجموعات وصلت ${hi} → زوّد لـ <b>${fmt(top + inc, 2)} كجم</b>.`, w: r1(top + inc), up: true };
