@@ -2020,7 +2020,7 @@ function renderHome(el) {
   $('#tS').onclick = () => sleepSheet(t);
   const sqb = $('#sqBan'); if (sqb) sqb.onclick = () => sleepSheet(t);
   const ck = $('#ckBan'); if (ck) ck.onclick = checkinSheet;
-  $('#cWa').onclick = () => { const d = day(t); d.water = r1(((d.water || 0) + 0.25) > set.water + 1 ? 0 : (d.water || 0) + 0.25); save(); render(); };
+  $('#cWa').onclick = () => { const d = day(t); d.water = Math.round((((d.water || 0) + 0.25) > set.water + 1 ? 0 : (d.water || 0) + 0.25) * 100) / 100; save(); render(); };
   $('#cMe').onclick = () => { tab = 'food'; render(); };
   const ab = $('#adhBtn'); if (ab) ab.onclick = () => adherenceSheet(w);
   const g = $('#goW'); if (g) g.onclick = () => { view.week = w; view.day = tdDay.key; startPlayer(w, tdDay.key); };
